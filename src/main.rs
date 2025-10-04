@@ -1,0 +1,68 @@
+mod gestures;
+mod input;
+mod config;
+
+use std::collections::HashMap;
+use evdev::{AbsoluteAxisCode, EventType};
+use crate::config::Config;
+use crate::gestures::{GesturesManager, Position};
+use crate::input::{calculate_move_threshold_units, get_touchpad_device};
+
+// TODO: per-application gestures
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::parse_from_file("gest.yaml").map_err(|e| format!("Failed to parse config file: {}", e))?;
+
+    let touchpad_device = get_touchpad_device()?;
+
+    let move_threshold_units = calculate_move_threshold_units(&touchpad_device, config.options.move_threshold)?;
+    let mut gestures_manager = GesturesManager::new(config, move_threshold_units);
+    dbg!(&gestures_manager);
+
+    let mut state: HashMap<u8, (Option<u16>, Option<u16>)> = HashMap::new();
+    let mut current_slot = 0u8;
+
+    let mut event_stream = touchpad_device.into_event_stream().unwrap();
+    while let Ok(event) = event_stream.next_event().await {
+        match event.event_type() {
+            EventType::ABSOLUTE => {
+                match AbsoluteAxisCode(event.code()) {
+                    AbsoluteAxisCode::ABS_MT_SLOT => {
+                        current_slot = event.value() as u8;
+                    }
+                    AbsoluteAxisCode::ABS_MT_TRACKING_ID => {
+                        if event.value() == -1 {
+                            state.remove(&current_slot);
+                        } else {
+                            state.insert(current_slot, (None, None));
+                        }
+                    }
+                    AbsoluteAxisCode::ABS_MT_POSITION_X => {
+                        if let Some(position) = state.get_mut(&current_slot) {
+                            position.0 = Some(event.value() as u16);
+                        }
+                    }
+                    AbsoluteAxisCode::ABS_MT_POSITION_Y => {
+                        if let Some(position) = state.get_mut(&current_slot) {
+                            position.1 = Some(event.value() as u16);
+                        }
+                    }
+                    _ => {}
+                }
+            },
+            EventType::SYNCHRONIZATION => {
+                let filtered_state = state
+                    .iter()
+                    .filter_map(|(slot, pos)| {
+                        Some((*slot, Position { x: pos.0?, y: pos.1? }))
+                    })
+                    .collect();
+                gestures_manager.update_state(&filtered_state);
+            },
+            _ => continue,
+        }
+    }
+
+    Ok(())
+}

@@ -1,0 +1,10 @@
+[package]
+name = "gest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+evdev = { version = "0.13.1", features = ["tokio"] }
+serde_yaml = "0.9.34"
+tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+serde = { version = "1.0.219", features = ["derive"] }
