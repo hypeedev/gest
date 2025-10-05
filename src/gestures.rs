@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
-use crate::config::{Config, Direction, Step};
+use crate::config::{Config, Direction, DefinedSequenceStep};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
@@ -11,10 +11,10 @@ pub struct Position {
 pub type State = HashMap<u8, Position>;
 
 #[derive(Debug)]
-enum SequenceStep {
-    Move { slots: Vec<u8>, direction: Direction },
-    TouchUp { slots: Vec<u8> },
-    TouchDown { slots: Vec<u8> },
+enum PerformedSequenceStep {
+    Move { slots: HashSet<u8>, direction: Direction },
+    TouchUp { slots: HashSet<u8> },
+    TouchDown { slots: HashSet<u8> },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,7 +29,7 @@ pub struct GesturesManager {
     previous_state: State, // positions of fingers in the previous update
     start_state: State, // initial positions when fingers touch down
     last_known_state: State, // positions of fingers just before they were lifted
-    current_sequence: Vec<SequenceStep>,
+    performed_sequence: Vec<PerformedSequenceStep>,
     repeated_gesture: bool,
     move_threshold_units: MoveThresholdUnits,
 }
@@ -41,21 +41,18 @@ impl GesturesManager {
             previous_state: HashMap::new(),
             start_state: HashMap::new(),
             last_known_state: HashMap::new(),
-            current_sequence: Vec::new(),
+            performed_sequence: Vec::new(),
             repeated_gesture: false,
             move_threshold_units,
         }
     }
 
     fn update_last_step(&mut self, slot: u8, direction: &Direction) -> bool {
-        if let Some(SequenceStep::Move { slots, direction: dir }) = self.current_sequence.last_mut()
+        if let Some(PerformedSequenceStep::Move { slots, direction: dir }) = self.performed_sequence.last_mut()
             && dir == direction
         {
-                if slots.contains(&slot) {
-                    return true;
-                }
-                slots.push(slot);
-                return true;
+            slots.insert(slot);
+            return true;
         }
         false
     }
@@ -71,7 +68,7 @@ impl GesturesManager {
             self.previous_state.clear();
             self.start_state.clear();
             self.last_known_state.clear();
-            self.current_sequence.clear();
+            self.performed_sequence.clear();
             return;
         }
 
@@ -80,7 +77,7 @@ impl GesturesManager {
 
             self.start_state.insert(*slot, *pos);
 
-            self.current_sequence.push(SequenceStep::TouchDown { slots: vec![*slot] });
+            self.performed_sequence.push(PerformedSequenceStep::TouchDown { slots: HashSet::from([*slot]) });
 
             if self.match_gestures(true) {
                 self.repeated_gesture = true;
@@ -95,11 +92,10 @@ impl GesturesManager {
         for slot in inactive_slots {
             self.last_known_state.insert(slot, *self.previous_state.get(&slot).unwrap());
 
-            if let Some(SequenceStep::TouchUp { slots }) = self.current_sequence.last_mut() {
-                if slots.contains(&slot) { continue; }
-                slots.push(slot);
+            if let Some(PerformedSequenceStep::TouchUp { slots }) = self.performed_sequence.last_mut() {
+                slots.insert(slot);
             } else {
-                self.current_sequence.push(SequenceStep::TouchUp { slots: vec![slot] });
+                self.performed_sequence.push(PerformedSequenceStep::TouchUp { slots: HashSet::from([slot]) });
                 // Set start positions for all slots to prevent issues with multi-finger gestures
                 for (slot, pos) in state {
                     self.start_state.insert(*slot, *pos);
@@ -132,7 +128,7 @@ impl GesturesManager {
             };
 
             if !self.update_last_step(slot, &direction) {
-                self.current_sequence.push(SequenceStep::Move { slots: vec![slot], direction });
+                self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction });
             }
 
             match direction {
@@ -146,14 +142,14 @@ impl GesturesManager {
 
     fn match_gestures(&mut self, repeating: bool) -> bool {
         // Remove all leading and trailing touch up and down steps
-        while matches!(self.current_sequence.first(), Some(SequenceStep::TouchDown { .. }) | Some(SequenceStep::TouchUp { .. })) {
-            self.current_sequence.remove(0);
+        while matches!(self.performed_sequence.first(), Some(PerformedSequenceStep::TouchDown { .. }) | Some(PerformedSequenceStep::TouchUp { .. })) {
+            self.performed_sequence.remove(0);
         }
-        while matches!(self.current_sequence.last(), Some(SequenceStep::TouchUp { .. }) | Some(SequenceStep::TouchDown { .. })) {
-            self.current_sequence.pop();
+        while matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::TouchUp { .. }) | Some(PerformedSequenceStep::TouchDown { .. })) {
+            self.performed_sequence.pop();
         }
 
-        if !self.current_sequence.is_empty() {
+        if !self.performed_sequence.is_empty() {
             self.pretty_print_sequence();
         }
 
@@ -161,18 +157,19 @@ impl GesturesManager {
 
         'gesture: for gesture in &self.config.gestures {
             if repeating && !gesture.repeatable
-                || gesture.sequence.len() != self.current_sequence.len() {
+                || gesture.sequence.len() != self.performed_sequence.len() {
                 continue;
             }
 
-            for (i, step) in gesture.sequence.iter().enumerate() {
-                match (step, &self.current_sequence[i]) {
-                    (Step::Move { fingers, direction }, SequenceStep::Move { slots, direction: dir }) => {
+            for (i, defined_step) in gesture.sequence.iter().enumerate() {
+                let performed_step = &self.performed_sequence[i];
+                match (defined_step, performed_step) {
+                    (DefinedSequenceStep::Move { fingers, direction }, PerformedSequenceStep::Move { slots, direction: dir }) => {
                         if *fingers as usize != slots.len() || direction != dir {
                             continue 'gesture;
                         }
                     }
-                    (Step::TouchUp { fingers }, SequenceStep::TouchUp { slots }) => {
+                    (DefinedSequenceStep::TouchUp { fingers }, PerformedSequenceStep::TouchUp { slots }) => {
                         if *fingers as usize != slots.len() {
                             continue 'gesture;
                         }
@@ -189,15 +186,7 @@ impl GesturesManager {
             println!("Matched gestures: {:?}", matched_gestures);
 
             for gesture in &matching_gestures {
-                if let Err(e) = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(&gesture.command)
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                {
-                    eprintln!("Failed to execute command '{}': {}", gesture.command, e);
-                }
+                self.run_command(&gesture.command);
             }
 
             return true;
@@ -206,12 +195,24 @@ impl GesturesManager {
         false
     }
 
+    fn run_command(&self, command: &str) {
+        if let Err(e) = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            eprintln!("Failed to execute command '{}': {}", command, e);
+        }
+    }
+
     fn pretty_print_sequence(&self) {
-        let steps = self.current_sequence.iter().map(|step| {
+        let steps = self.performed_sequence.iter().map(|step| {
             match step {
-                SequenceStep::TouchDown { slots } => format!("TouchDown({})", slots.len()),
-                SequenceStep::TouchUp { slots } => format!("TouchUp({})", slots.len()),
-                SequenceStep::Move { slots, direction } => {
+                PerformedSequenceStep::TouchDown { slots } => format!("TouchDown({})", slots.len()),
+                PerformedSequenceStep::TouchUp { slots } => format!("TouchUp({})", slots.len()),
+                PerformedSequenceStep::Move { slots, direction } => {
                     let dir_str = match direction {
                         Direction::Up => "Up",
                         Direction::Down => "Down",
