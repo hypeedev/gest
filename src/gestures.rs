@@ -22,15 +22,7 @@ impl Debug for PerformedSequenceStep {
         match self {
             Self::TouchDown { slots } => write!(f, "TouchDown({})", slots.len()),
             Self::TouchUp { slots } => write!(f, "TouchUp({})", slots.len()),
-            Self::Move { slots, direction } => {
-                let dir_str = match direction {
-                    Direction::Up => "Up",
-                    Direction::Down => "Down",
-                    Direction::Left => "Left",
-                    Direction::Right => "Right",
-                };
-                write!(f, "Move{}({})", dir_str, slots.len())
-            }
+            Self::Move { slots, direction } => write!(f, "Move{:?}({})", direction, slots.len()),
         }
     }
 }
