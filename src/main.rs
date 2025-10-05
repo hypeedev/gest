@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let move_threshold_units = calculate_move_threshold_units(&touchpad_device, config.options.move_threshold)?;
     let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units);
     println!("Loaded gestures: {:#?}", gestures_manager.config.gestures);
-    
+
     let mut state: HashMap<u8, (Option<u16>, Option<u16>)> = HashMap::new();
     let mut current_slot = 0u8;
 

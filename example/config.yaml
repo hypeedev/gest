@@ -8,14 +8,18 @@ options:
 gestures:
   - name: Previous workspace
     sequence:
-      - fingers: 3
+      - fingers: 4
         action: move left
     repeatable: true
-    command: hyprctl dispatch workspace r-2
+    command: hyprctl dispatch workspace r-1
+    matching_windows:
+      - firefox-developer-edition
 
   - name: Next workspace
     sequence:
-      - fingers: 3
+      - fingers: 4
         action: move right
     repeatable: true
-    command: hyprctl dispatch workspace r+0
+    command: hyprctl dispatch workspace r+1
+    matching_windows:
+      - firefox-developer-edition
