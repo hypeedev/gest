@@ -12,7 +12,9 @@ use crate::input::{calculate_move_threshold_units, get_touchpad_device};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::parse_from_file("gest.yaml").map_err(|e| format!("Failed to parse config file: {}", e))?;
+    let xdg_config_dir_config_path = Config::get_xdg_config_dir_config_path()
+        .ok_or("Could not determine XDG config directory")?;
+    let config = Config::parse_from_file(xdg_config_dir_config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
 
     let touchpad_device = get_touchpad_device()?;
 

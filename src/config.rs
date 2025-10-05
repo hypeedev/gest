@@ -1,3 +1,5 @@
+use std::path::Path;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Direction {
     Up,
@@ -65,14 +67,40 @@ impl Options {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
+    pub import: Option<Vec<String>>,
     #[serde(default)]
     pub options: Options,
+    #[serde(default)]
+    pub gestures: Vec<Gesture>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ImportedConfig {
     pub gestures: Vec<Gesture>,
 }
 
 impl Config {
-    pub fn parse_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(serde_yaml::from_str(&content)?)
+    pub fn parse_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        let content = std::fs::read_to_string(&path)?;
+        let mut main_config: Config = serde_yaml::from_str(&content)?;
+        if let Some(imports) = &main_config.import {
+            let parent_path = path.as_ref().parent().unwrap_or_else(|| Path::new("."));
+            for import_path in imports {
+                let import_content = std::fs::read_to_string(parent_path.join(import_path))?;
+                let imported_config: ImportedConfig = serde_yaml::from_str(&import_content)?;
+                main_config.gestures.extend(imported_config.gestures);
+            }
+        }
+        Ok(main_config)
+    }
+
+    pub fn get_xdg_config_dir_config_path() -> Option<std::path::PathBuf> {
+        if let Ok(xdg_config_home) = std::env::var("XDG_CONFIG_HOME") {
+            Some(std::path::PathBuf::from(xdg_config_home).join("gest/config.yaml"))
+        } else if let Ok(home) = std::env::var("HOME") {
+            Some(std::path::PathBuf::from(home).join(".config").join("gest/config.yaml"))
+        } else {
+            None
+        }
     }
 }
