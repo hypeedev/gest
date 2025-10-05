@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
 use std::process::Stdio;
 use crate::config::{Config, Direction, DefinedSequenceStep};
 
@@ -10,11 +11,28 @@ pub struct Position {
 
 pub type State = HashMap<u8, Position>;
 
-#[derive(Debug)]
 enum PerformedSequenceStep {
     Move { slots: HashSet<u8>, direction: Direction },
     TouchUp { slots: HashSet<u8> },
     TouchDown { slots: HashSet<u8> },
+}
+
+impl Debug for PerformedSequenceStep {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TouchDown { slots } => write!(f, "TouchDown({})", slots.len()),
+            Self::TouchUp { slots } => write!(f, "TouchUp({})", slots.len()),
+            Self::Move { slots, direction } => {
+                let dir_str = match direction {
+                    Direction::Up => "Up",
+                    Direction::Down => "Down",
+                    Direction::Left => "Left",
+                    Direction::Right => "Right",
+                };
+                write!(f, "Move{}({})", dir_str, slots.len())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,10 +92,7 @@ impl GesturesManager {
 
         for (slot, pos) in state {
             if self.start_state.contains_key(slot) { continue; }
-
             self.start_state.insert(*slot, *pos);
-
-            self.performed_sequence.push(PerformedSequenceStep::TouchDown { slots: HashSet::from([*slot]) });
 
             if self.match_gestures(true) {
                 self.repeated_gesture = true;
@@ -150,7 +165,7 @@ impl GesturesManager {
         }
 
         if !self.performed_sequence.is_empty() {
-            self.pretty_print_sequence();
+            println!("Current sequence: {:?}", self.performed_sequence);
         }
 
         let mut matching_gestures = Vec::new();
@@ -205,24 +220,5 @@ impl GesturesManager {
         {
             eprintln!("Failed to execute command '{}': {}", command, e);
         }
-    }
-
-    fn pretty_print_sequence(&self) {
-        let steps = self.performed_sequence.iter().map(|step| {
-            match step {
-                PerformedSequenceStep::TouchDown { slots } => format!("TouchDown({})", slots.len()),
-                PerformedSequenceStep::TouchUp { slots } => format!("TouchUp({})", slots.len()),
-                PerformedSequenceStep::Move { slots, direction } => {
-                    let dir_str = match direction {
-                        Direction::Up => "Up",
-                        Direction::Down => "Down",
-                        Direction::Left => "Left",
-                        Direction::Right => "Right",
-                    };
-                    format!("Move{}({})", dir_str, slots.len())
-                }
-            }
-        }).collect::<Vec<_>>().join(" -> ");
-        println!("Current sequence: {}", steps);
     }
 }
