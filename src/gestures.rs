@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use crate::config::{Config, Direction, DefinedSequenceStep};
+use crate::Window;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
@@ -35,17 +37,18 @@ pub struct MoveThresholdUnits {
 
 #[derive(Debug)]
 pub struct GesturesManager {
-    config: Config,
+    pub config: Config,
     previous_state: State, // positions of fingers in the previous update
     start_state: State, // initial positions when fingers touch down
     last_known_state: State, // positions of fingers just before they were lifted
     performed_sequence: Vec<PerformedSequenceStep>,
     repeated_gesture: bool,
     move_threshold_units: MoveThresholdUnits,
+    active_window: Arc<Mutex<Window>>,
 }
 
 impl GesturesManager {
-    pub fn new(config: Config, move_threshold_units: MoveThresholdUnits) -> Self {
+    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits) -> Self {
         Self {
             config,
             previous_state: HashMap::new(),
@@ -54,6 +57,7 @@ impl GesturesManager {
             performed_sequence: Vec::new(),
             repeated_gesture: false,
             move_threshold_units,
+            active_window,
         }
     }
 
@@ -157,7 +161,7 @@ impl GesturesManager {
         }
 
         if !self.performed_sequence.is_empty() {
-            println!("Current sequence: {:?}", self.performed_sequence);
+            println!("Performed sequence: {:?}", self.performed_sequence);
         }
 
         let mut matching_gestures = Vec::new();
@@ -166,6 +170,13 @@ impl GesturesManager {
             if repeating && !gesture.repeatable
                 || gesture.sequence.len() != self.performed_sequence.len() {
                 continue;
+            }
+
+            if let Some(applicable_windows) = &gesture.matching_windows {
+                let active_window_guard = self.active_window.lock().unwrap();
+                if !applicable_windows.iter().any(|w| active_window_guard.class == *w) {
+                    continue;
+                }
             }
 
             for (i, defined_step) in gesture.sequence.iter().enumerate() {

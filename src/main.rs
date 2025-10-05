@@ -1,27 +1,49 @@
 mod gestures;
 mod input;
 mod config;
+mod window_monitor;
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use evdev::{AbsoluteAxisCode, EventType};
 use crate::config::Config;
 use crate::gestures::{GesturesManager, Position};
 use crate::input::{calculate_move_threshold_units, get_touchpad_device};
 
-// TODO: per-application gestures
+#[derive(Debug, Default)]
+pub struct Window {
+    class: String,
+    title: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let xdg_config_dir_config_path = Config::get_xdg_config_dir_config_path()
-        .ok_or("Could not determine XDG config directory")?;
-    let config = Config::parse_from_file(xdg_config_dir_config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
+    let active_window = Arc::new(Mutex::new(Window::default()));
+
+    tokio::task::spawn_blocking({
+        let active_window = Arc::clone(&active_window);
+        move || {
+            let mut wlroots = window_monitor::WlrootsMonitor::new(Box::new(move |class_name: String, title: String| {
+                let mut active_window_guard = active_window.lock().unwrap();
+                active_window_guard.class = class_name;
+                active_window_guard.title = title;
+                println!("Active window changed: {:?}", *active_window_guard);
+            }));
+            wlroots.run();
+        }
+    });
+
+    let config_path = Config::get_config_path()
+        .ok_or("Could not determine config file path")?;
+    println!("Using config file: {:?}", config_path);
+    let config = Config::parse_from_file(config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
 
     let touchpad_device = get_touchpad_device()?;
 
     let move_threshold_units = calculate_move_threshold_units(&touchpad_device, config.options.move_threshold)?;
-    let mut gestures_manager = GesturesManager::new(config, move_threshold_units);
-    dbg!(&gestures_manager);
-
+    let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units);
+    println!("Loaded gestures: {:#?}", gestures_manager.config.gestures);
+    
     let mut state: HashMap<u8, (Option<u16>, Option<u16>)> = HashMap::new();
     let mut current_slot = 0u8;
 

@@ -49,6 +49,7 @@ pub struct Gesture {
     #[serde(default = "Gesture::default_repeatable")]
     pub repeatable: bool,
     pub command: String,
+    pub matching_windows: Option<Vec<String>>,
 }
 
 impl Gesture {
@@ -94,7 +95,7 @@ impl Config {
         Ok(main_config)
     }
 
-    pub fn get_xdg_config_dir_config_path() -> Option<std::path::PathBuf> {
+    pub fn get_config_path() -> Option<std::path::PathBuf> {
         if let Ok(xdg_config_home) = std::env::var("XDG_CONFIG_HOME") {
             Some(std::path::PathBuf::from(xdg_config_home).join("gest/config.yaml"))
         } else if let Ok(home) = std::env::var("HOME") {
