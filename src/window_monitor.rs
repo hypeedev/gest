@@ -49,9 +49,9 @@ impl Wayland {
     }
 
     fn send_message(&mut self, object_id: u32, opcode: u32, payload: &[u8]) {
-        let full_opcode = opcode | ((payload.len() as u32 + 8) << 16);
-        let mut message = Vec::with_capacity(8 + payload.len());
-        message.extend_from_slice(&object_id.to_le_bytes());
+        let size = payload.len() as u32 + 8;
+        let full_opcode = opcode | (size << 16);
+        let mut message = object_id.to_le_bytes().to_vec();
         message.extend_from_slice(&full_opcode.to_le_bytes());
         message.extend_from_slice(payload);
         self.socket.write_all(&message).expect("Failed to send message");
@@ -105,15 +105,15 @@ impl WlrootsMonitor {
                 windows.insert(u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]), window);
             }
 
-            if windows.contains_key(&obj) {
+            if let Some(win) = windows.get_mut(&obj) {
                 match event {
-                    0 => windows.get_mut(&obj).unwrap().title = Some(self.wayland.read_string(&payload)),
-                    1 => windows.get_mut(&obj).unwrap().class_name = Some(self.wayland.read_string(&payload)),
+                    0 => win.title = Some(self.wayland.read_string(&payload)),
+                    1 => win.class_name = Some(self.wayland.read_string(&payload)),
                     4 if payload[0] > 0 && payload[4] == 2 => {
-                        let window = windows.get(&obj).unwrap();
-                        let class_name = window.class_name.clone().unwrap_or_default();
-                        let title = window.title.clone().unwrap_or_default();
-                        (self.on_window_change)(class_name, title);
+                        (self.on_window_change)(
+                            win.class_name.clone().unwrap_or_default().to_string(),
+                            win.title.clone().unwrap_or_default().to_string(),
+                        );
                     }
                     _ => {}
                 }

@@ -46,14 +46,10 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
 pub struct Gesture {
     pub name: String,
     pub sequence: Vec<DefinedSequenceStep>,
-    #[serde(default = "Gesture::default_repeatable")]
+    #[serde(default)]
     pub repeatable: bool,
     pub command: String,
     pub matching_windows: Option<Vec<String>>,
-}
-
-impl Gesture {
-    fn default_repeatable() -> bool { false }
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
