@@ -128,10 +128,11 @@ impl Config {
         }
 
         // Check for conflicting gestures
-        let mut all_gestures = main_config.gestures.clone();
-        for app_gestures in main_config.application_gestures.values() {
-            all_gestures.extend(app_gestures.clone());
-        }
+        let all_gestures = main_config.gestures
+            .iter()
+            .chain(main_config.application_gestures.values().flatten())
+            .cloned()
+            .collect::<Vec<_>>();
         for i in 0..main_config.gestures.len() {
             for j in (i + 1)..all_gestures.len() {
                 if are_gestures_conflicting(&main_config.gestures[i], &all_gestures[j]) {
