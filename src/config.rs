@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -49,7 +50,6 @@ pub struct Gesture {
     #[serde(default)]
     pub repeatable: bool,
     pub command: String,
-    pub matching_windows: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -62,6 +62,8 @@ impl Options {
     fn default_move_threshold() -> f32 { 0.15 }
 }
 
+type ApplicationGestures = HashMap<String, Vec<Gesture>>;
+
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     pub import: Option<Vec<String>>,
@@ -69,11 +71,38 @@ pub struct Config {
     pub options: Options,
     #[serde(default)]
     pub gestures: Vec<Gesture>,
+    #[serde(default)]
+    pub application_gestures: ApplicationGestures,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct ImportedConfig {
-    pub gestures: Vec<Gesture>,
+    pub gestures: Option<Vec<Gesture>>,
+    pub application_gestures: Option<ApplicationGestures>,
+}
+
+fn are_gestures_conflicting(g1: &Gesture, g2: &Gesture) -> bool {
+    if g1.sequence.len() != g2.sequence.len() {
+        return false;
+    }
+
+    for (step1, step2) in g1.sequence.iter().zip(g2.sequence.iter()) {
+        match (step1, step2) {
+            (DefinedSequenceStep::TouchDown { fingers: f1 }, DefinedSequenceStep::TouchDown { fingers: f2 }) |
+            (DefinedSequenceStep::TouchUp { fingers: f1 }, DefinedSequenceStep::TouchUp { fingers: f2 }) => {
+                if f1 != f2 {
+                    return false;
+                }
+            }
+            (DefinedSequenceStep::Move { fingers: f1, direction: d1 }, DefinedSequenceStep::Move { fingers: f2, direction: d2 }) => {
+                if f1 != f2 || d1 != d2 {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 impl Config {
@@ -85,9 +114,33 @@ impl Config {
             for import_path in imports {
                 let import_content = std::fs::read_to_string(parent_path.join(import_path))?;
                 let imported_config: ImportedConfig = serde_yaml::from_str(&import_content)?;
-                main_config.gestures.extend(imported_config.gestures);
+
+                if let Some(gestures) = &imported_config.gestures {
+                    main_config.gestures.extend(gestures.clone());
+                }
+
+                if let Some(app_gestures) = imported_config.application_gestures {
+                    for (app, gestures) in app_gestures {
+                        main_config.application_gestures.entry(app).or_insert_with(Vec::new).extend(gestures);
+                    }
+                }
             }
         }
+
+        // Check for conflicting gestures
+        let mut all_gestures = main_config.gestures.clone();
+        for app_gestures in main_config.application_gestures.values() {
+            all_gestures.extend(app_gestures.clone());
+        }
+        for i in 0..main_config.gestures.len() {
+            for j in (i + 1)..all_gestures.len() {
+                if are_gestures_conflicting(&main_config.gestures[i], &all_gestures[j]) {
+                    // TODO: improve error reporting to show file and line numbers
+                    eprintln!("Conflicting gestures found: '{}' and '{}'", main_config.gestures[i].name, all_gestures[j].name);
+                }
+            }
+        }
+
         Ok(main_config)
     }
 

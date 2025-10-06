@@ -20,7 +20,7 @@ pub struct Window {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_window = Arc::new(Mutex::new(Window::default()));
 
-    tokio::task::spawn_blocking({
+    std::thread::spawn({
         let active_window = Arc::clone(&active_window);
         move || {
             let mut wlroots = window_monitor::WlrootsMonitor::new(Box::new(move |class_name: String, title: String| {
@@ -37,12 +37,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Could not determine config file path")?;
     println!("Using config file: {:?}", config_path);
     let config = Config::parse_from_file(config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
+    println!("Loaded config: {:#?}", config);
 
     let touchpad_device = get_touchpad_device()?;
 
     let move_threshold_units = calculate_move_threshold_units(&touchpad_device, config.options.move_threshold)?;
     let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units);
-    println!("Loaded gestures: {:#?}", gestures_manager.config.gestures);
 
     let mut state: HashMap<u8, (Option<u16>, Option<u16>)> = HashMap::new();
     let mut current_slot = 0u8;

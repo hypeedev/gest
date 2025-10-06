@@ -12,8 +12,6 @@ gestures:
         action: move left
     repeatable: true
     command: hyprctl dispatch workspace r-1
-    matching_windows:
-      - firefox-developer-edition
 
   - name: Next workspace
     sequence:
@@ -21,5 +19,3 @@ gestures:
         action: move right
     repeatable: true
     command: hyprctl dispatch workspace r+1
-    matching_windows:
-      - firefox-developer-edition

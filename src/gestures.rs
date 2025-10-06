@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use crate::config::{Config, Direction, DefinedSequenceStep};
+use crate::config::{Config, Direction, DefinedSequenceStep, Gesture};
 use crate::Window;
 
 #[derive(Debug, Clone, Copy)]
@@ -164,44 +164,21 @@ impl GesturesManager {
             println!("Performed sequence: {:?}", self.performed_sequence);
         }
 
-        let mut matching_gestures = Vec::new();
-
-        'gesture: for gesture in &self.config.gestures {
-            if repeating && !gesture.repeatable
-                || gesture.sequence.len() != self.performed_sequence.len() {
-                continue;
-            }
-
-            if let Some(applicable_windows) = &gesture.matching_windows {
-                let active_window_guard = self.active_window.lock().unwrap();
-                if !applicable_windows.iter().any(|w| active_window_guard.class == *w) {
-                    continue;
-                }
-            }
-
-            for (i, defined_step) in gesture.sequence.iter().enumerate() {
-                let performed_step = &self.performed_sequence[i];
-                match (defined_step, performed_step) {
-                    (DefinedSequenceStep::Move { fingers, direction }, PerformedSequenceStep::Move { slots, direction: dir }) => {
-                        if *fingers as usize != slots.len() || direction != dir {
-                            continue 'gesture;
-                        }
-                    }
-                    (DefinedSequenceStep::TouchUp { fingers }, PerformedSequenceStep::TouchUp { slots }) => {
-                        if *fingers as usize != slots.len() {
-                            continue 'gesture;
-                        }
-                    }
-                    _ => continue 'gesture,
-                }
-            }
-
-            matching_gestures.push(gesture.clone());
-        }
+        let active_window_class = &self.active_window.lock().unwrap().class;
+        let app_gestures = self.config.application_gestures.get(active_window_class)
+            .map(|g| g.iter())
+            .into_iter()
+            .flatten();
+        let matching_gestures = self.config.gestures
+            .iter()
+            .chain(app_gestures)
+            .filter(|g| self.does_gesture_match(g, repeating))
+            .cloned()
+            .collect::<Vec<_>>();
 
         if !matching_gestures.is_empty() {
-            let matched_gestures = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
-            println!("Matched gestures: {:?}", matched_gestures);
+            let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
+            println!("Matched gestures: {:?}", names);
 
             for gesture in &matching_gestures {
                 self.run_command(&gesture.command);
@@ -211,6 +188,32 @@ impl GesturesManager {
         }
 
         false
+    }
+
+    fn does_gesture_match(&self, gesture: &Gesture, repeating: bool) -> bool {
+        if repeating && !gesture.repeatable
+            || gesture.sequence.len() != self.performed_sequence.len() {
+            return false;
+        }
+
+        for (i, defined_step) in gesture.sequence.iter().enumerate() {
+            let performed_step = &self.performed_sequence[i];
+            match (defined_step, performed_step) {
+                (DefinedSequenceStep::Move { fingers, direction }, PerformedSequenceStep::Move { slots, direction: dir }) => {
+                    if *fingers as usize != slots.len() || direction != dir {
+                        return false;
+                    }
+                }
+                (DefinedSequenceStep::TouchUp { fingers }, PerformedSequenceStep::TouchUp { slots }) => {
+                    if *fingers as usize != slots.len() {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+
+        true
     }
 
     fn run_command(&self, command: &str) {
