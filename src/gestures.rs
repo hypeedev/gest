@@ -120,35 +120,53 @@ impl GesturesManager {
                 _ => continue,
             };
 
-            // TODO: ensure that y has not changed significantly to avoid diagonal moves
-            // TODO: or maybe allow diagonal moves?
+            if self.point_outside_of_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64, 0.1) {
+                let direction = self.point_side_in_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64);
 
-            let delta_x = pos.x as i32 - start_pos.x as i32;
-            let delta_y = pos.y as i32 - start_pos.y as i32;
+                if !self.update_last_step(slot, &direction) {
+                    self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction });
+                }
 
-            let direction = if delta_x >= self.move_threshold_units.x as i32 {
-                Direction::Right
-            } else if delta_x <= -(self.move_threshold_units.x as i32) {
-                Direction::Left
-            } else if delta_y >= self.move_threshold_units.y as i32 {
-                Direction::Down
-            } else if delta_y <= -(self.move_threshold_units.y as i32) {
-                Direction::Up
-            } else {
-                continue;
-            };
-
-            if !self.update_last_step(slot, &direction) {
-                self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction });
+                if let Some(p) = self.start_state.get_mut(&slot) {
+                    p.x = pos.x;
+                    p.y = pos.y;
+                }
             }
-
-            match direction {
-                Direction::Left | Direction::Right => self.start_state.get_mut(&slot).map(|p| p.x = pos.x),
-                Direction::Up | Direction::Down => self.start_state.get_mut(&slot).map(|p| p.y = pos.y),
-            };
         }
 
         self.previous_state = state.clone();
+    }
+
+    pub fn point_outside_of_ellipse(&self, x: f64, y: f64, h: f64, k: f64, eps: f64) -> bool {
+        let nx = (x - h) / self.move_threshold_units.x as f64;
+        let ny = (y - k) / self.move_threshold_units.y as f64;
+        let v = nx * nx + ny * ny;
+
+        let point_on_ellipse = (v - 1.0).abs() <= eps;
+        let point_inside_ellipse = v < 1.0;
+        !(point_on_ellipse || point_inside_ellipse)
+    }
+
+    pub fn point_side_in_ellipse(&self, x: f64, y: f64, h: f64, k: f64) -> Direction {
+        let dx = x - h;
+        let dy = y - k;
+
+        let nx = dx / self.move_threshold_units.x as f64;
+        let ny = dy / self.move_threshold_units.y as f64;
+
+        if nx.abs() > ny.abs() {
+            if dx >= 0.0 {
+                Direction::Right
+            } else {
+                Direction::Left
+            }
+        } else {
+            if dy < 0.0 {
+                Direction::Up
+            } else {
+                Direction::Down
+            }
+        }
     }
 
     fn match_gestures(&mut self, repeating: bool) -> bool {
