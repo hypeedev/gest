@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use crate::config::{Config, Direction, DefinedSequenceStep, Gesture};
 use crate::Window;
+use crate::args::Args;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
@@ -36,28 +37,28 @@ pub struct MoveThresholdUnits {
 }
 
 #[derive(Debug)]
-pub struct GesturesManager {
+pub struct GesturesManager<'a> {
     pub config: Config,
     previous_state: State, // positions of fingers in the previous update
     start_state: State, // initial positions when fingers touch down
-    last_known_state: State, // positions of fingers just before they were lifted
     performed_sequence: Vec<PerformedSequenceStep>,
     repeated_gesture: bool,
     move_threshold_units: MoveThresholdUnits,
     active_window: Arc<Mutex<Window>>,
+    args: &'a Args,
 }
 
-impl GesturesManager {
-    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits) -> Self {
+impl<'a> GesturesManager<'a> {
+    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, args: &'a Args) -> Self {
         Self {
             config,
             previous_state: HashMap::new(),
             start_state: HashMap::new(),
-            last_known_state: HashMap::new(),
             performed_sequence: Vec::new(),
             repeated_gesture: false,
             move_threshold_units,
             active_window,
+            args,
         }
     }
 
@@ -71,44 +72,38 @@ impl GesturesManager {
         false
     }
 
-    pub fn update_state(&mut self, state: &State) {
+    pub fn update_state(&mut self, state: State) {
+        // All fingers lifted
         if state.is_empty() {
             if !self.repeated_gesture {
-                self.match_gestures(false);
+                self.match_gestures();
             } else {
                 self.repeated_gesture = false;
             }
 
             self.previous_state.clear();
             self.start_state.clear();
-            self.last_known_state.clear();
             self.performed_sequence.clear();
             return;
         }
 
-        for (slot, pos) in state {
+        for (slot, pos) in &state {
             if self.start_state.contains_key(slot) { continue; }
             self.start_state.insert(*slot, *pos);
-
-            if self.match_gestures(true) {
-                self.repeated_gesture = true;
-            }
         }
 
-        // Remove slots that are no longer active from `start_state` and store their last known positions in `last_known_state`
+        // Remove slots that are no longer active from `start_state`
         let inactive_slots = self.start_state
             .extract_if(|slot, _| !state.contains_key(slot))
             .map(|(slot, _)| slot)
             .collect::<Vec<_>>();
         for slot in inactive_slots {
-            self.last_known_state.insert(slot, *self.previous_state.get(&slot).unwrap());
-
             if let Some(PerformedSequenceStep::TouchUp { slots }) = self.performed_sequence.last_mut() {
                 slots.insert(slot);
             } else {
                 self.performed_sequence.push(PerformedSequenceStep::TouchUp { slots: HashSet::from([slot]) });
-                // Set start positions for all slots to prevent issues with multi-finger gestures
-                for (slot, pos) in state {
+                // Reset start positions for all slots
+                for (slot, pos) in &state {
                     self.start_state.insert(*slot, *pos);
                 }
             }
@@ -134,7 +129,29 @@ impl GesturesManager {
             }
         }
 
-        self.previous_state = state.clone();
+        if state.len() > self.previous_state.len()
+            && !self.performed_sequence.is_empty()
+       {
+            let new_slot = *state.keys().find(|k| !self.previous_state.contains_key(k)).unwrap();
+            if let Some(PerformedSequenceStep::TouchDown { slots }) = self.performed_sequence.last_mut() {
+                slots.insert(new_slot);
+            } else {
+                self.performed_sequence.push(PerformedSequenceStep::TouchDown { slots: HashSet::from([new_slot]) });
+            }
+
+            // Check for repeated gestures
+            if matches!(&self.performed_sequence[self.performed_sequence.len() - 2..], [PerformedSequenceStep::TouchUp { .. }, PerformedSequenceStep::TouchDown { .. }]) {
+                // TODO: Find a way to get rid of this abomination
+                let repeated_gesture = self.repeated_gesture;
+                self.repeated_gesture = true;
+                let matched = self.match_gestures();
+                if !matched {
+                    self.repeated_gesture = repeated_gesture;
+                }
+            }
+        }
+
+        self.previous_state = state;
     }
 
     pub fn point_outside_of_ellipse(&self, x: f64, y: f64, h: f64, k: f64, eps: f64) -> bool {
@@ -160,25 +177,22 @@ impl GesturesManager {
             } else {
                 Direction::Left
             }
+        } else if dy < 0.0 {
+            Direction::Up
         } else {
-            if dy < 0.0 {
-                Direction::Up
-            } else {
-                Direction::Down
-            }
+            Direction::Down
         }
     }
 
-    fn match_gestures(&mut self, repeating: bool) -> bool {
-        // Remove all leading and trailing touch up and down steps
-        while matches!(self.performed_sequence.first(), Some(PerformedSequenceStep::TouchDown { .. }) | Some(PerformedSequenceStep::TouchUp { .. })) {
-            self.performed_sequence.remove(0);
-        }
-        while matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::TouchUp { .. }) | Some(PerformedSequenceStep::TouchDown { .. })) {
-            self.performed_sequence.pop();
-        }
+    fn match_gestures(&mut self) -> bool {
+        // Temporarily remove all trailing touch up and down steps for matching
+        let trailing_count = self.performed_sequence.iter()
+            .rev()
+            .take_while(|step| matches!(step, PerformedSequenceStep::TouchDown { .. } | PerformedSequenceStep::TouchUp { .. }))
+            .count();
+        let trailing_steps = self.performed_sequence.split_off(self.performed_sequence.len() - trailing_count);
 
-        if !self.performed_sequence.is_empty() {
+        if !self.performed_sequence.is_empty() && self.args.verbose {
             println!("Performed sequence: {:?}", self.performed_sequence);
         }
 
@@ -190,13 +204,15 @@ impl GesturesManager {
         let matching_gestures = self.config.gestures
             .iter()
             .chain(app_gestures)
-            .filter(|g| self.does_gesture_match(g, repeating))
+            .filter(|g| self.does_gesture_match(g))
             .cloned()
             .collect::<Vec<_>>();
 
         if !matching_gestures.is_empty() {
             let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
-            println!("Matched gestures: {:?}", names);
+            if self.args.verbose {
+                println!("Matched gestures: {:?}", names);
+            }
 
             for gesture in &matching_gestures {
                 self.run_command(&gesture.command);
@@ -205,11 +221,13 @@ impl GesturesManager {
             return true;
         }
 
+        self.performed_sequence.extend(trailing_steps);
+
         false
     }
 
-    fn does_gesture_match(&self, gesture: &Gesture, repeating: bool) -> bool {
-        if repeating && !gesture.repeatable
+    fn does_gesture_match(&self, gesture: &Gesture) -> bool {
+        if self.repeated_gesture && !gesture.repeatable
             || gesture.sequence.len() != self.performed_sequence.len() {
             return false;
         }
@@ -223,6 +241,11 @@ impl GesturesManager {
                     }
                 }
                 (DefinedSequenceStep::TouchUp { fingers }, PerformedSequenceStep::TouchUp { slots }) => {
+                    if *fingers as usize != slots.len() {
+                        return false;
+                    }
+                }
+                (DefinedSequenceStep::TouchDown { fingers }, PerformedSequenceStep::TouchDown { slots }) => {
                     if *fingers as usize != slots.len() {
                         return false;
                     }

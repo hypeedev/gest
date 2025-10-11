@@ -43,6 +43,23 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
     }
 }
 
+// TODO: Add a `distance` field to `Gesture` that will specify the minimum distance a move must cover to be considered valid.
+/*
+options:
+    distance:
+        short: 0.15
+        medium: 0.3
+        long: 0.5
+
+- fingers: 3
+  action: move up
+  distance: 0.3
+
+- fingers: 3
+  action: move up
+  distance: short|medium|long
+*/
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Gesture {
     pub name: String,
@@ -105,6 +122,12 @@ fn are_gestures_conflicting(g1: &Gesture, g2: &Gesture) -> bool {
     true
 }
 
+fn is_repeatable_gesture_invalid(gesture: &Gesture) -> bool {
+    gesture.repeatable
+        && gesture.sequence.len() >= 2
+        && matches!(gesture.sequence[gesture.sequence.len() - 2..], [DefinedSequenceStep::TouchUp { .. }, DefinedSequenceStep::TouchDown { .. }])
+}
+
 impl Config {
     pub fn parse_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(&path)?;
@@ -121,7 +144,7 @@ impl Config {
 
                 if let Some(app_gestures) = imported_config.application_gestures {
                     for (app, gestures) in app_gestures {
-                        main_config.application_gestures.entry(app).or_insert_with(Vec::new).extend(gestures);
+                        main_config.application_gestures.entry(app).or_default().extend(gestures);
                     }
                 }
             }
@@ -134,10 +157,10 @@ impl Config {
             .cloned()
             .collect::<Vec<_>>();
         for i in 0..main_config.gestures.len() {
-            for j in (i + 1)..all_gestures.len() {
-                if are_gestures_conflicting(&main_config.gestures[i], &all_gestures[j]) {
+            for gesture in all_gestures.iter().skip(i + 1) {
+                if are_gestures_conflicting(&main_config.gestures[i], gesture) {
                     // TODO: improve error reporting to show file and line numbers
-                    eprintln!("Conflicting gestures found: '{}' and '{}'", main_config.gestures[i].name, all_gestures[j].name);
+                    eprintln!("Conflicting gestures found: '{}' and '{}'", main_config.gestures[i].name, gesture.name);
                 }
             }
         }
