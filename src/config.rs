@@ -7,13 +7,23 @@ pub enum Direction {
     Down,
     Left,
     Right,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone)]
 pub enum DefinedSequenceStep {
     TouchDown { fingers: u8 },
     TouchUp { fingers: u8 },
-    Move { fingers: u8, direction: Direction }
+    Move { fingers: u8, direction: Direction },
+    MoveEdge { fingers: u8, edge: Edge, direction: Direction },
 }
 
 impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
@@ -28,14 +38,52 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
         let action = map.get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| serde::de::Error::custom("Missing or invalid 'action' field"))?;
+        let edge = map.get("edge")
+            .and_then(|v| v.as_str());
+
+        let edge = if let Some(edge_str) = edge {
+            match edge_str {
+                "up" => Some(Edge::Top),
+                "down" => Some(Edge::Bottom),
+                "left" => Some(Edge::Left),
+                "right" => Some(Edge::Right),
+                _ => return Err(serde::de::Error::custom(format!("Unknown edge: {}", edge_str))),
+            }
+        } else {
+            None
+        };
 
         let step = match action {
             "touch_down" | "touch down" => DefinedSequenceStep::TouchDown { fingers },
             "touch_up" | "touch up" => DefinedSequenceStep::TouchUp { fingers },
-            "move_up" | "move up" => DefinedSequenceStep::Move { fingers, direction: Direction::Up },
-            "move_down" | "move down" => DefinedSequenceStep::Move { fingers, direction: Direction::Down },
-            "move_left" | "move left" => DefinedSequenceStep::Move { fingers, direction: Direction::Left },
-            "move_right" | "move right" => DefinedSequenceStep::Move { fingers, direction: Direction::Right },
+            "move_up" | "move up" => {
+                if let Some(edge) = edge {
+                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Up }
+                } else {
+                    DefinedSequenceStep::Move { fingers, direction: Direction::Up }
+                }
+            },
+            "move_down" | "move down" => {
+                if let Some(edge) = edge {
+                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Down }
+                } else {
+                    DefinedSequenceStep::Move { fingers, direction: Direction::Down }
+                }
+            },
+            "move_left" | "move left" => {
+                if let Some(edge) = edge {
+                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Left }
+                } else {
+                    DefinedSequenceStep::Move { fingers, direction: Direction::Left }
+                }
+            },
+            "move_right" | "move right" => {
+                if let Some(edge) = edge {
+                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Right }
+                } else {
+                    DefinedSequenceStep::Move { fingers, direction: Direction::Right }
+                }
+            },
             _ => return Err(serde::de::Error::custom(format!("Unknown action: {}", action))),
         };
 
@@ -69,10 +117,32 @@ pub struct Gesture {
     pub command: String,
 }
 
+impl Gesture {
+    pub fn edge_only(&self) -> bool {
+        self.sequence.iter().all(|step| matches!(step, DefinedSequenceStep::MoveEdge { .. }))
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct EdgeOptions {
+    #[serde(default = "EdgeOptions::default_threshold")]
+    pub threshold: f32,
+    #[serde(default = "EdgeOptions::default_sensitivity")]
+    pub sensitivity: f32,
+}
+
+impl EdgeOptions {
+    fn default_threshold() -> f32 { 0.1 }
+
+    fn default_sensitivity() -> f32 { 0.5 }
+}
+
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Options {
     #[serde(default = "Options::default_move_threshold")]
     pub move_threshold: f32,
+    #[serde(default)]
+    pub edge: EdgeOptions,
 }
 
 impl Options {

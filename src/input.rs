@@ -15,17 +15,23 @@ pub fn get_touchpad_device() -> Result<Device, String> {
     Err("Error: No touchpad device found.".to_string())
 }
 
-pub fn calculate_move_threshold_units(touchpad_device: &Device, threshold: f32) -> Result<MoveThresholdUnits, Box<dyn std::error::Error>> {
-    let mut x = 0;
-    let mut y = 0;
+pub fn calculate_move_threshold_units(touchpad_size: &MoveThresholdUnits, threshold: f32) -> Result<MoveThresholdUnits, Box<dyn std::error::Error>> {
+    let x = (touchpad_size.x as f32 * threshold) as u16;
+    let y = (touchpad_size.y as f32 * threshold) as u16;
+    Ok(MoveThresholdUnits { x, y })
+}
+
+pub fn get_touchpad_size(touchpad_device: &Device) -> Result<MoveThresholdUnits, Box<dyn std::error::Error>> {
+    let mut width = 0;
+    let mut height = 0;
 
     for (code, abs) in touchpad_device.get_absinfo()? {
         match code {
-            AbsoluteAxisCode::ABS_MT_POSITION_X => x = (abs.maximum() as f32 * threshold) as u16,
-            AbsoluteAxisCode::ABS_MT_POSITION_Y => y = (abs.maximum() as f32 * threshold) as u16,
+            AbsoluteAxisCode::ABS_MT_POSITION_X => width = abs.maximum() as u16,
+            AbsoluteAxisCode::ABS_MT_POSITION_Y => height = abs.maximum() as u16,
             _ => {}
         }
     }
 
-    Ok(MoveThresholdUnits { x, y })
+    Ok(MoveThresholdUnits { x: width, y: height })
 }

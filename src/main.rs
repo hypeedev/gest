@@ -10,7 +10,7 @@ use evdev::{AbsoluteAxisCode, EventType};
 use clap::Parser;
 use crate::config::Config;
 use crate::gestures::{GesturesManager, Position};
-use crate::input::{calculate_move_threshold_units, get_touchpad_device};
+use crate::input::{calculate_move_threshold_units, get_touchpad_device, get_touchpad_size};
 use crate::args::Args;
 use std::path::Path;
 
@@ -60,9 +60,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let touchpad_device = get_touchpad_device()?;
+    let touchpad_size = get_touchpad_size(&touchpad_device)?;
+    let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.options.move_threshold)?;
 
-    let move_threshold_units = calculate_move_threshold_units(&touchpad_device, config.options.move_threshold)?;
-    let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units, &args);
+    let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units, touchpad_size, &args);
 
     let mut state: HashMap<u8, (Option<u16>, Option<u16>)> = HashMap::new();
     let mut current_slot = 0u8;

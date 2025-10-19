@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use crate::config::{Config, Direction, DefinedSequenceStep, Gesture};
+use crate::config::{Config, Direction, Edge, DefinedSequenceStep, Gesture};
 use crate::Window;
 use crate::args::Args;
 
@@ -18,6 +18,7 @@ enum PerformedSequenceStep {
     Move { slots: HashSet<u8>, direction: Direction },
     TouchUp { slots: HashSet<u8> },
     TouchDown { slots: HashSet<u8> },
+    MoveEdge { slots: HashSet<u8>, edge: Edge, direction: Direction },
 }
 
 impl Debug for PerformedSequenceStep {
@@ -26,6 +27,7 @@ impl Debug for PerformedSequenceStep {
             Self::TouchDown { slots } => write!(f, "TouchDown({})", slots.len()),
             Self::TouchUp { slots } => write!(f, "TouchUp({})", slots.len()),
             Self::Move { slots, direction } => write!(f, "Move{:?}({})", direction, slots.len()),
+            Self::MoveEdge { slots, edge, direction } => write!(f, "MoveEdge{:?}-{:?}({})", edge, direction, slots.len()),
         }
     }
 }
@@ -41,22 +43,26 @@ pub struct GesturesManager<'a> {
     pub config: Config,
     previous_state: State, // positions of fingers in the previous update
     start_state: State, // initial positions when fingers touch down
+    initial_start_state: State, // initial positions when fingers touch down for the very first time
     performed_sequence: Vec<PerformedSequenceStep>,
     repeated_gesture: bool,
     move_threshold_units: MoveThresholdUnits,
+    touchpad_size: MoveThresholdUnits,
     active_window: Arc<Mutex<Window>>,
     args: &'a Args,
 }
 
 impl<'a> GesturesManager<'a> {
-    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, args: &'a Args) -> Self {
+    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, touchpad_size: MoveThresholdUnits, args: &'a Args) -> Self {
         Self {
             config,
             previous_state: HashMap::new(),
             start_state: HashMap::new(),
+            initial_start_state: HashMap::new(),
             performed_sequence: Vec::new(),
             repeated_gesture: false,
             move_threshold_units,
+            touchpad_size,
             active_window,
             args,
         }
@@ -72,6 +78,22 @@ impl<'a> GesturesManager<'a> {
         false
     }
 
+    fn is_at_edge(&self, pos: &Position) -> Option<Edge> {
+        let edge_threshold_x = (self.touchpad_size.x as f32 * self.config.options.edge.threshold) as u16;
+        let edge_threshold_y = (self.touchpad_size.y as f32 * self.config.options.edge.threshold) as u16;
+        if pos.x <= edge_threshold_x {
+            Some(Edge::Left)
+        } else if pos.x >= self.touchpad_size.x - edge_threshold_x {
+            Some(Edge::Right)
+        } else if pos.y <= edge_threshold_y {
+            Some(Edge::Top)
+        } else if pos.y >= self.touchpad_size.y - edge_threshold_y {
+            Some(Edge::Bottom)
+        } else {
+            None
+        }
+    }
+
     pub fn update_state(&mut self, state: State) {
         // All fingers lifted
         if state.is_empty() {
@@ -83,13 +105,54 @@ impl<'a> GesturesManager<'a> {
 
             self.previous_state.clear();
             self.start_state.clear();
+            self.initial_start_state.clear();
             self.performed_sequence.clear();
             return;
         }
 
         for (slot, pos) in &state {
-            if self.start_state.contains_key(slot) { continue; }
-            self.start_state.insert(*slot, *pos);
+            if !self.start_state.contains_key(slot) {
+                self.start_state.insert(*slot, *pos);
+            }
+
+            if !self.initial_start_state.contains_key(slot) {
+                self.initial_start_state.insert(*slot, *pos);
+
+                let at_edge = self.is_at_edge(pos);
+                if let Some(edge) = at_edge {
+                    if let Some(PerformedSequenceStep::MoveEdge { slots, .. }) = self.performed_sequence.last_mut() {
+                        slots.insert(*slot);
+                    } else {
+                        self.performed_sequence.push(PerformedSequenceStep::MoveEdge { slots: HashSet::from([*slot]), edge, direction: Direction::None });
+                    }
+                }
+            }
+        }
+
+        if matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::MoveEdge { .. })) {
+            for (slot, pos) in &state {
+                let start_pos = match self.start_state.get(slot) {
+                    Some(pos) => *pos,
+                    _ => continue,
+                };
+
+                // TODO: Add an option to speed up / slow down triggering edge moves
+                if self.point_outside_of_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64, true) {
+                    let direction = self.point_side_in_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64);
+                    if let Some(PerformedSequenceStep::MoveEdge { direction: dir, .. }) = self.performed_sequence.last_mut() {
+                        *dir = direction;
+                    }
+
+                    self.repeated_gesture = true;
+                    self.match_gestures();
+
+                    // Reset start positions for all slots
+                    for (slot, pos) in &state {
+                        self.start_state.insert(*slot, *pos);
+                    }
+                }
+            }
+            return;
         }
 
         // Remove slots that are no longer active from `start_state`
@@ -115,8 +178,15 @@ impl<'a> GesturesManager<'a> {
                 _ => continue,
             };
 
-            if self.point_outside_of_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64, 0.1) {
+            if self.point_outside_of_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64, false) {
                 let direction = self.point_side_in_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64);
+
+                if let Some(PerformedSequenceStep::MoveEdge { direction: dir, .. }) = self.performed_sequence.last_mut()
+                    && *dir == Direction::None
+                {
+                    *dir = direction;
+                    continue;
+                }
 
                 if !self.update_last_step(slot, &direction) {
                     self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction });
@@ -154,14 +224,12 @@ impl<'a> GesturesManager<'a> {
         self.previous_state = state;
     }
 
-    pub fn point_outside_of_ellipse(&self, x: f64, y: f64, h: f64, k: f64, eps: f64) -> bool {
-        let nx = (x - h) / self.move_threshold_units.x as f64;
-        let ny = (y - k) / self.move_threshold_units.y as f64;
+    pub fn point_outside_of_ellipse(&self, x: f64, y: f64, h: f64, k: f64, is_edge: bool) -> bool {
+        let sensitivity = if is_edge { 1.0 - self.config.options.edge.sensitivity } else { 1.0 };
+        let nx = (x - h) / (self.move_threshold_units.x as f64 * sensitivity as f64);
+        let ny = (y - k) / (self.move_threshold_units.y as f64 * sensitivity as f64);
         let v = nx * nx + ny * ny;
-
-        let point_on_ellipse = (v - 1.0).abs() <= eps;
-        let point_inside_ellipse = v < 1.0;
-        !(point_on_ellipse || point_inside_ellipse)
+        v > 1.0
     }
 
     pub fn point_side_in_ellipse(&self, x: f64, y: f64, h: f64, k: f64) -> Direction {
@@ -227,7 +295,7 @@ impl<'a> GesturesManager<'a> {
     }
 
     fn does_gesture_match(&self, gesture: &Gesture) -> bool {
-        if self.repeated_gesture && !gesture.repeatable
+        if self.repeated_gesture && !gesture.repeatable && !gesture.edge_only()
             || gesture.sequence.len() != self.performed_sequence.len() {
             return false;
         }
@@ -247,6 +315,11 @@ impl<'a> GesturesManager<'a> {
                 }
                 (DefinedSequenceStep::TouchDown { fingers }, PerformedSequenceStep::TouchDown { slots }) => {
                     if *fingers as usize != slots.len() {
+                        return false;
+                    }
+                }
+                (DefinedSequenceStep::MoveEdge { fingers, edge, direction }, PerformedSequenceStep::MoveEdge { slots, edge: e, direction: dir }) => {
+                    if *fingers as usize != slots.len() || edge != e || direction != dir {
                         return false;
                     }
                 }
