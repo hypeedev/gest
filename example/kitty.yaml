@@ -1,0 +1,45 @@
+application_gestures:
+  kitty:
+    - name: Previous tab
+      sequence:
+        - fingers: 3
+          action: move left
+      repeatable: true
+      command: ydotool key 29:1 42:1 15:1 15:0 42:0 29:0
+
+    - name: Next tab
+      sequence:
+        - fingers: 3
+          action: move right
+      repeatable: true
+      command: ydotool key 29:1 15:1 15:0 29:0
+
+    - name: Move tab left
+      sequence:
+        - fingers: 3
+          action: move left
+        - fingers: 1
+          action: touch up
+        - fingers: 2
+          action: move right
+      repeatable: true
+      command: ydotool key 29:1 42:1 51:1 51:0 42:0 29:0
+
+    - name: Move tab right
+      sequence:
+        - fingers: 3
+          action: move right
+        - fingers: 1
+          action: touch up
+        - fingers: 2
+          action: move left
+      repeatable: true
+      command: ydotool key 29:1 42:1 52:1 52:0 42:0 29:0
+
+    - name: Close tab
+      sequence:
+        - fingers: 3
+          action: move down
+      repeatable: true
+      command: ydotool key 29:1 32:1 32:0 29:0
+

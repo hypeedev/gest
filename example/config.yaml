@@ -1,9 +1,15 @@
 import:
-  - tabs.yaml
+  - browser.yaml
   - playerctl.yaml
+  - kitty.yaml
+  - jetbrains.yaml
 
 options:
   move_threshold: 0.15
+
+  edge:
+    threshold: 0.05
+    sensitivity: 0.5
 
 gestures:
   - name: Previous workspace
@@ -19,3 +25,32 @@ gestures:
         action: move right
     repeatable: true
     command: hyprctl dispatch workspace r+1
+
+  - name: Toggle special:terminal workspace
+    sequence:
+      - fingers: 4
+        action: move left
+      - fingers: 4
+        action: move right
+    repeatable: true
+    command: hyprctl dispatch togglespecialworkspace terminal
+
+  - name: Kill active window
+    sequence:
+      - fingers: 4
+        action: move down
+    command: hyprctl dispatch killactive
+
+  - name: Brightness up
+    sequence:
+      - fingers: 1
+        action: move up
+        edge: right
+    command: brightnessctl set 10%+
+
+  - name: Brightness down
+    sequence:
+      - fingers: 1
+        action: move down
+        edge: right
+    command: brightnessctl set 10%-

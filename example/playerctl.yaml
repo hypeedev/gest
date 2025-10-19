@@ -10,23 +10,16 @@ gestures:
     repeatable: true
     command: playerctl play-pause
 
-  - name: playerctl position 5-
+  - name: playerctl position 0
     sequence:
       - fingers: 3
         action: move down
       - fingers: 3
         action: move left
-    repeatable: true
-    command: playerctl position 5-
-
-  - name: playerctl position 5+
-    sequence:
       - fingers: 3
-        action: move down
-      - fingers: 3
-        action: move right
+        action: move up
     repeatable: true
-    command: playerctl position 5+
+    command: playerctl position 0
 
   - name: playerctl next
     sequence:
