@@ -16,14 +16,14 @@ gestures:
     sequence:
       - fingers: 4
         action: move left
-    repeatable: true
+    repeat_mode: slide
     command: hyprctl dispatch workspace r-1
 
   - name: Next workspace
     sequence:
       - fingers: 4
         action: move right
-    repeatable: true
+    repeat_mode: slide
     command: hyprctl dispatch workspace r+1
 
   - name: Toggle special:terminal workspace
@@ -32,7 +32,7 @@ gestures:
         action: move left
       - fingers: 4
         action: move right
-    repeatable: true
+    repeat_mode: tap
     command: hyprctl dispatch togglespecialworkspace terminal
 
   - name: Kill active window

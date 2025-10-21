@@ -7,7 +7,7 @@ gestures:
         action: move left
       - fingers: 3
         action: move right
-    repeatable: true
+    repeat_mode: tap
     command: playerctl play-pause
 
   - name: playerctl position 0
@@ -18,7 +18,7 @@ gestures:
         action: move left
       - fingers: 3
         action: move up
-    repeatable: true
+    repeat_mode: tap
     command: playerctl position 0
 
   - name: playerctl next
@@ -29,7 +29,7 @@ gestures:
         action: move right
       - fingers: 3
         action: move down
-    repeatable: true
+    repeat_mode: tap
     command: playerctl next
 
   - name: playerctl previous
@@ -40,5 +40,5 @@ gestures:
         action: move left
       - fingers: 3
         action: move down
-    repeatable: true
+    repeat_mode: tap
     command: playerctl previous

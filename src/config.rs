@@ -108,12 +108,19 @@ options:
   distance: short|medium|long
 */
 
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RepeatMode {
+    Tap,
+    Slide,
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Gesture {
     pub name: String,
     pub sequence: Vec<DefinedSequenceStep>,
     #[serde(default)]
-    pub repeatable: bool,
+    pub repeat_mode: Option<RepeatMode>,
     pub command: String,
 }
 
@@ -192,12 +199,6 @@ fn are_gestures_conflicting(g1: &Gesture, g2: &Gesture) -> bool {
     true
 }
 
-fn is_repeatable_gesture_invalid(gesture: &Gesture) -> bool {
-    gesture.repeatable
-        && gesture.sequence.len() >= 2
-        && matches!(gesture.sequence[gesture.sequence.len() - 2..], [DefinedSequenceStep::TouchUp { .. }, DefinedSequenceStep::TouchDown { .. }])
-}
-
 impl Config {
     pub fn parse_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(&path)?;
@@ -220,17 +221,31 @@ impl Config {
             }
         }
 
-        // Check for conflicting gestures
+        // TODO: simplify everything after this comment
+
+        let edge_gestures = main_config.gestures
+            .iter_mut()
+            .chain(main_config.application_gestures.values_mut().flatten())
+            .filter(|g| g.edge_only())
+            .collect::<Vec<_>>();
+        for gesture in edge_gestures {
+            if gesture.repeat_mode == Some(RepeatMode::Tap) {
+                eprintln!("Warning: Gesture '{}' is edge-only and cannot use 'tap' repeat mode. Consider changing to 'slide' or removing repeat mode.", gesture.name);
+            }
+            gesture.repeat_mode = Some(RepeatMode::Slide);
+        }
+
         let all_gestures = main_config.gestures
             .iter()
             .chain(main_config.application_gestures.values().flatten())
-            .cloned()
             .collect::<Vec<_>>();
+
+        // Check for conflicting gestures
         for i in 0..main_config.gestures.len() {
             for gesture in all_gestures.iter().skip(i + 1) {
                 if are_gestures_conflicting(&main_config.gestures[i], gesture) {
                     // TODO: improve error reporting to show file and line numbers
-                    eprintln!("Conflicting gestures found: '{}' and '{}'", main_config.gestures[i].name, gesture.name);
+                    eprintln!("Warning: Conflicting gestures found: '{}' and '{}'", main_config.gestures[i].name, gesture.name);
                 }
             }
         }
