@@ -3,6 +3,7 @@ import:
   - playerctl.yaml
   - kitty.yaml
   - jetbrains.yaml
+  - vim.yaml
 
 options:
   move_threshold: 0.15
@@ -19,6 +20,14 @@ gestures:
     repeat_mode: slide
     command: hyprctl dispatch workspace r-1
 
+  - name: Previous workspace
+    sequence:
+      - fingers: 1
+        action: move left
+        edge: bottom
+    repeat_mode: slide
+    command: hyprctl dispatch workspace r-1
+
   - name: Next workspace
     sequence:
       - fingers: 4
@@ -26,12 +35,19 @@ gestures:
     repeat_mode: slide
     command: hyprctl dispatch workspace r+1
 
+  - name: Next workspace
+    sequence:
+      - fingers: 1
+        action: move right
+        edge: bottom
+    repeat_mode: slide
+    command: hyprctl dispatch workspace r+1
+
   - name: Toggle special:terminal workspace
     sequence:
-      - fingers: 4
-        action: move left
-      - fingers: 4
-        action: move right
+      - fingers: 1
+        action: move down
+        edge: top
     repeat_mode: tap
     command: hyprctl dispatch togglespecialworkspace terminal
 
@@ -46,6 +62,7 @@ gestures:
       - fingers: 1
         action: move up
         edge: right
+    repeat_mode: slide
     command: brightnessctl set 10%+
 
   - name: Brightness down
@@ -53,4 +70,5 @@ gestures:
       - fingers: 1
         action: move down
         edge: right
+    repeat_mode: slide
     command: brightnessctl set 10%-

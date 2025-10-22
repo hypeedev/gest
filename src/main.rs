@@ -3,16 +3,17 @@ mod input;
 mod config;
 mod window_monitor;
 mod args;
+mod sequence_step;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use evdev::{AbsoluteAxisCode, EventType};
 use clap::Parser;
+use std::path::Path;
 use crate::config::Config;
 use crate::gestures::{GesturesManager, Position};
 use crate::input::{calculate_move_threshold_units, get_touchpad_device, get_touchpad_size};
 use crate::args::Args;
-use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct Window {
