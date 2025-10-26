@@ -78,9 +78,9 @@ application_gestures:
     - `edge` (optional): Edge specification for edge moves (`top`, `bottom`, `left`, `right`).
   - `repeat_mode` (optional): How the gesture can be repeated (`tap`, `slide`).
   - `command`: Shell command to execute when the gesture is recognized.
-- `application_gestures`: Mapping of application regex patterns to their specific gestures. (see `examples/vim.yaml`)
+- `application_gestures`: Mapping of application regex patterns to their specific gestures. (see [examples/vim.yaml](examples/vim.yaml))
 
-Example configuration files can be found in the `examples/` directory.
+Example configuration files can be found in the [examples](examples) directory.
 
 ## CLI
 
