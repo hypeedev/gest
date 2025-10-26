@@ -60,9 +60,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Loaded config: {:#?}", config);
     }
 
-    let touchpad_device = get_touchpad_device()?;
+    let touchpad_device = get_touchpad_device().ok_or("No touchpad device found")?;
     let touchpad_size = get_touchpad_size(&touchpad_device)?;
-    let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.options.move_threshold)?;
+    let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.options.move_threshold);
 
     let mut gestures_manager = GesturesManager::new(config, active_window, move_threshold_units, touchpad_size, &args);
 
@@ -98,8 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             EventType::SYNCHRONIZATION => {
-                let filtered_state = state
-                    .iter()
+                let filtered_state = state.iter()
                     .filter_map(|(slot, pos)| {
                         Some((*slot, Position { x: pos.0?, y: pos.1? }))
                     })

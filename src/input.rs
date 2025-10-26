@@ -1,24 +1,23 @@
-use evdev::{AbsoluteAxisCode, Device, EventType};
+use evdev::{AbsoluteAxisCode, Device, EventType, KeyCode};
 use crate::gestures::MoveThresholdUnits;
 
-pub fn get_touchpad_device() -> Result<Device, String> {
+pub fn get_touchpad_device() -> Option<Device> {
     for (_, device) in evdev::enumerate() {
         let is_touchpad = device.supported_events().contains(EventType::KEY)
             && device.supported_events().contains(EventType::ABSOLUTE)
-            && device.supported_keys().is_some_and(|keys| keys.contains(evdev::KeyCode::BTN_TOUCH));
+            && device.supported_keys().is_some_and(|keys| keys.contains(KeyCode::BTN_TOUCH));
 
         if is_touchpad {
-            return Ok(device);
+            return Some(device);
         }
     }
-
-    Err("Error: No touchpad device found.".to_string())
+    None
 }
 
-pub fn calculate_move_threshold_units(touchpad_size: &MoveThresholdUnits, threshold: f32) -> Result<MoveThresholdUnits, Box<dyn std::error::Error>> {
+pub fn calculate_move_threshold_units(touchpad_size: &MoveThresholdUnits, threshold: f32) -> MoveThresholdUnits {
     let x = (touchpad_size.x as f32 * threshold) as u16;
     let y = (touchpad_size.y as f32 * threshold) as u16;
-    Ok(MoveThresholdUnits { x, y })
+    MoveThresholdUnits { x, y }
 }
 
 pub fn get_touchpad_size(touchpad_device: &Device) -> Result<MoveThresholdUnits, Box<dyn std::error::Error>> {

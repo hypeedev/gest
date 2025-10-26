@@ -104,8 +104,7 @@ impl<'a> GesturesManager<'a> {
             if !self.initial_touch_down_state.contains_key(slot) {
                 self.initial_touch_down_state.insert(*slot, *pos);
 
-                let at_edge = self.is_at_edge(pos);
-                if let Some(edge) = at_edge {
+                if let Some(edge) = self.is_at_edge(pos) {
                     if let Some(PerformedSequenceStep::MoveEdge { slots, .. }) = self.performed_sequence.last_mut() {
                         slots.insert(*slot);
                     } else {
@@ -293,24 +292,10 @@ impl<'a> GesturesManager<'a> {
     }
 
     fn does_gesture_match(&self, gesture: &Gesture, repeat_mode: &RepeatMode) -> bool {
-        if gesture.sequence.len() != self.performed_sequence.len() {
+        if gesture.sequence.len() != self.performed_sequence.len()
+            || gesture.repeat_mode != RepeatMode::Slide && *repeat_mode == RepeatMode::Slide
+        {
             return false;
-        }
-
-        match (&gesture.repeat_mode, repeat_mode) {
-            (RepeatMode::None, RepeatMode::None) => {}
-            (RepeatMode::None, RepeatMode::Tap) => {}
-            (RepeatMode::None, RepeatMode::Slide) => {
-                return false;
-            }
-            (RepeatMode::Tap, RepeatMode::None) => {}
-            (RepeatMode::Tap, RepeatMode::Tap) => {}
-            (RepeatMode::Tap, RepeatMode::Slide) => {
-                return false;
-            }
-            (RepeatMode::Slide, RepeatMode::None) => {}
-            (RepeatMode::Slide, RepeatMode::Tap) => {}
-            (RepeatMode::Slide, RepeatMode::Slide) => {}
         }
 
         for (i, defined_step) in gesture.sequence.iter().enumerate() {
