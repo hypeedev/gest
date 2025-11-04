@@ -4,7 +4,6 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use crate::config::{Config, Direction, Edge, Gesture, RepeatMode};
 use crate::Window;
-use crate::args::Args;
 use crate::sequence_step::{DefinedSequenceStep, PerformedSequenceStep};
 
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +30,7 @@ pub struct MoveThresholdUnits {
 }
 
 #[derive(Debug)]
-pub struct GesturesManager<'a> {
+pub struct GesturesManager {
     pub config: Config,
     /// positions of fingers in the previous update
     previous_state: State,
@@ -44,13 +43,12 @@ pub struct GesturesManager<'a> {
     move_threshold_units: MoveThresholdUnits,
     touchpad_size: MoveThresholdUnits,
     active_window: Arc<Mutex<Window>>,
-    args: &'a Args,
     slots_outside_ellipse: HashSet<u8>,
     direction: Direction,
 }
 
-impl<'a> GesturesManager<'a> {
-    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, touchpad_size: MoveThresholdUnits, args: &'a Args) -> Self {
+impl GesturesManager {
+    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, touchpad_size: MoveThresholdUnits) -> Self {
         Self {
             config,
             previous_state: HashMap::new(),
@@ -61,7 +59,6 @@ impl<'a> GesturesManager<'a> {
             move_threshold_units,
             touchpad_size,
             active_window,
-            args,
             slots_outside_ellipse: HashSet::new(),
             direction: Direction::None,
         }
@@ -297,8 +294,8 @@ impl<'a> GesturesManager<'a> {
             .count();
         let trailing_steps = self.performed_sequence.split_off(self.performed_sequence.len() - trailing_count);
 
-        if !self.performed_sequence.is_empty() && self.args.verbose {
-            println!("Performed sequence: {:?}", self.performed_sequence);
+        if !self.performed_sequence.is_empty() {
+            log::debug!("Performed sequence: {:?}", self.performed_sequence);
         }
 
         let active_window = &self.active_window.lock().unwrap();
@@ -330,9 +327,7 @@ impl<'a> GesturesManager<'a> {
         if !matching_gestures.is_empty() {
             if self.config.options.run_all_matches {
                 let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
-                if self.args.verbose {
-                    println!("Matched gestures: {:?}", names);
-                }
+                log::debug!("Matched gestures: {:?}", names);
 
                 for gesture in &matching_gestures {
                     self.run_command(&gesture.command);
@@ -353,9 +348,7 @@ impl<'a> GesturesManager<'a> {
                     }
                 }
 
-                if self.args.verbose {
-                    println!("Matched gesture: {:?}", matched_gesture.name);
-                }
+                log::debug!("Matched gesture: {:?}", matched_gesture.name);
 
                 self.run_command(&matched_gesture.command);
             }
@@ -394,7 +387,7 @@ impl<'a> GesturesManager<'a> {
             .stderr(Stdio::null())
             .spawn()
         {
-            eprintln!("Failed to execute command '{}': {}", command, e);
+            log::error!("Failed to execute command '{}': {}", command, e);
         }
     }
 }

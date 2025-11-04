@@ -88,7 +88,7 @@ Example configuration files can be found in the [examples](examples) directory.
 Usage: gest [OPTIONS]
 
 Options:
-  -v, --verbose                    Verbose output
+  -v, --verbose...                 Output verbosity level
   -c, --config-file <CONFIG_FILE>  Path to configuration file
   -h, --help                       Print help
 ```

@@ -53,7 +53,7 @@ impl DefinedSequenceStep {
                         match distances.get(&name) {
                             Some(d) => Some(*d),
                             None => {
-                                eprintln!("Unknown distance: \"{}\"", name);
+                                log::error!("Unknown distance: \"{}\"", name);
                                 None
                             }
                         }

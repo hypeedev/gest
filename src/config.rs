@@ -246,8 +246,22 @@ impl Config {
                 let g2 = gesture;
                 if are_gestures_conflicting(g1, g2) {
                     // TODO: improve error reporting to show file and line numbers
-                    dbg!(g1, g2);
-                    eprintln!("Warning: Conflicting gestures found: '{}' and '{}'", g1.name, g2.name);
+                    log::warn!("Warning: Conflicting gestures found: '{}' and '{}'", g1.name, g2.name);
+                }
+            }
+        }
+
+        // Check for sequence steps with distance less than threshold
+        for gesture in &all_gestures {
+            for step in &gesture.sequence {
+                if let DefinedSequenceStep::Move { distance, .. } = step
+                    && let Some(distance) = distance
+                    && *distance < main_config.options.move_threshold
+                {
+                    log::warn!(
+                        "Gesture '{}' has a move step with distance {} which is less than the configured move_threshold of {}",
+                        gesture.name, distance, main_config.options.move_threshold
+                    );
                 }
             }
         }
