@@ -76,6 +76,7 @@ application_gestures:
     - `fingers`: Number of fingers involved in the step.
     - `action`: Action type (`move left/right/up/down`, `touch up/down`).
     - `edge` (optional): Edge specification for edge moves (`top`, `bottom`, `left`, `right`).
+    - `distance` (optional): Minimum distance (as a fraction of touchpad size) for this step.
   - `repeat_mode` (optional): How the gesture can be repeated (`tap`, `slide`).
   - `command`: Shell command to execute when the gesture is recognized.
 - `application_gestures`: Mapping of application regex patterns to their specific gestures. (see [examples/vim.yaml](examples/vim.yaml))
