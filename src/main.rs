@@ -56,9 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::parse_from_file(config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
 
-    if args.verbose {
-        println!("Loaded config: {:#?}", config);
-    }
+    // if args.verbose {
+    //     println!("Loaded config: {:#?}", config);
+    // }
 
     let touchpad_device = get_touchpad_device().ok_or("No touchpad device found")?;
     let touchpad_size = get_touchpad_size(&touchpad_device)?;

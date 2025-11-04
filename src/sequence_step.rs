@@ -1,9 +1,15 @@
 use std::fmt::{Formatter, Debug};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use crate::config::{Direction, Edge};
 
+#[derive(Debug, Clone)]
+pub enum Distance {
+    Variable(String),
+    Fixed(f32),
+}
+
 pub enum PerformedSequenceStep {
-    Move { slots: HashSet<u8>, direction: Direction },
+    Move { slots: HashSet<u8>, direction: Direction, distance: f32 },
     TouchUp { slots: HashSet<u8> },
     TouchDown { slots: HashSet<u8> },
     MoveEdge { slots: HashSet<u8>, edge: Edge, direction: Direction },
@@ -14,7 +20,7 @@ impl Debug for PerformedSequenceStep {
         match self {
             Self::TouchDown { slots } => write!(f, "TouchDown({})", slots.len()),
             Self::TouchUp { slots } => write!(f, "TouchUp({})", slots.len()),
-            Self::Move { slots, direction } => write!(f, "Move{:?}({})", direction, slots.len()),
+            Self::Move { slots, direction, distance } => write!(f, "Move{:?}({}, {})", direction, slots.len(), distance),
             Self::MoveEdge { slots, edge, direction } => write!(f, "MoveEdge{:?}-{:?}({})", edge, direction, slots.len()),
         }
     }
@@ -24,11 +30,47 @@ impl Debug for PerformedSequenceStep {
 pub enum DefinedSequenceStep {
     TouchDown { fingers: u8 },
     TouchUp { fingers: u8 },
-    Move { fingers: u8, direction: Direction },
+    Move { fingers: u8, direction: Direction, distance: Option<f32> },
     MoveEdge { fingers: u8, edge: Edge, direction: Direction },
 }
 
-impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
+#[derive(Debug, Clone)]
+pub enum DefinedSequenceStepRaw {
+    TouchDown { fingers: u8 },
+    TouchUp { fingers: u8 },
+    Move { fingers: u8, direction: Direction, distance: Option<Distance> },
+    MoveEdge { fingers: u8, edge: Edge, direction: Direction },
+}
+
+impl DefinedSequenceStep {
+    pub fn from_raw(raw: DefinedSequenceStepRaw, distances: &HashMap<String, f32>) -> Self {
+        match raw {
+            DefinedSequenceStepRaw::TouchDown { fingers } => DefinedSequenceStep::TouchDown { fingers },
+            DefinedSequenceStepRaw::TouchUp { fingers } => DefinedSequenceStep::TouchUp { fingers },
+            DefinedSequenceStepRaw::Move { fingers, direction, distance } => {
+                let distance = match distance {
+                    Some(Distance::Variable(name)) => {
+                        match distances.get(&name) {
+                            Some(d) => Some(*d),
+                            None => {
+                                eprintln!("Unknown distance: \"{}\"", name);
+                                None
+                            }
+                        }
+                    }
+                    Some(Distance::Fixed(d)) => Some(d),
+                    _ => None,
+                };
+                DefinedSequenceStep::Move { fingers, direction, distance }
+            }
+            DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction } => {
+                DefinedSequenceStep::MoveEdge { fingers, edge, direction }
+            }
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DefinedSequenceStepRaw {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>
@@ -42,6 +84,17 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
             .ok_or_else(|| serde::de::Error::custom("Missing or invalid 'action' field"))?;
         let edge = map.get("edge")
             .and_then(|v| v.as_str());
+        let distance = map.get("distance")
+            .and_then(|v| {
+                v.as_str().map(|s| Distance::Variable(s.to_string()))
+                    .or_else(|| v.as_f64().map(|f| Distance::Fixed(f as f32)))
+            });
+
+        if let Some(Distance::Fixed(d)) = distance
+            && !(0f32..=1f32).contains(&d)
+        {
+            return Err(serde::de::Error::custom(format!("Distance must be between 0 and 1, got {}", d)));
+        }
 
         let edge = if let Some(edge_str) = edge {
             match edge_str {
@@ -56,34 +109,34 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
         };
 
         let step = match action {
-            "touch_down" | "touch down" => DefinedSequenceStep::TouchDown { fingers },
-            "touch_up" | "touch up" => DefinedSequenceStep::TouchUp { fingers },
+            "touch_down" | "touch down" => DefinedSequenceStepRaw::TouchDown { fingers },
+            "touch_up" | "touch up" => DefinedSequenceStepRaw::TouchUp { fingers },
             "move_up" | "move up" => {
                 if let Some(edge) = edge {
-                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Up }
+                    DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction: Direction::Up }
                 } else {
-                    DefinedSequenceStep::Move { fingers, direction: Direction::Up }
+                    DefinedSequenceStepRaw::Move { fingers, direction: Direction::Up, distance }
                 }
             },
             "move_down" | "move down" => {
                 if let Some(edge) = edge {
-                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Down }
+                    DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction: Direction::Down }
                 } else {
-                    DefinedSequenceStep::Move { fingers, direction: Direction::Down }
+                    DefinedSequenceStepRaw::Move { fingers, direction: Direction::Down, distance }
                 }
             },
             "move_left" | "move left" => {
                 if let Some(edge) = edge {
-                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Left }
+                    DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction: Direction::Left }
                 } else {
-                    DefinedSequenceStep::Move { fingers, direction: Direction::Left }
+                    DefinedSequenceStepRaw::Move { fingers, direction: Direction::Left, distance }
                 }
             },
             "move_right" | "move right" => {
                 if let Some(edge) = edge {
-                    DefinedSequenceStep::MoveEdge { fingers, edge, direction: Direction::Right }
+                    DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction: Direction::Right }
                 } else {
-                    DefinedSequenceStep::Move { fingers, direction: Direction::Right }
+                    DefinedSequenceStepRaw::Move { fingers, direction: Direction::Right, distance }
                 }
             },
             _ => return Err(serde::de::Error::custom(format!("Unknown action: {}", action))),
@@ -96,8 +149,14 @@ impl<'de> serde::Deserialize<'de> for DefinedSequenceStep {
 impl PartialEq<PerformedSequenceStep> for DefinedSequenceStep {
     fn eq(&self, other: &PerformedSequenceStep) -> bool {
         match (self, other) {
-            (DefinedSequenceStep::Move { fingers, direction }, PerformedSequenceStep::Move { slots, direction: dir }) => {
+            (DefinedSequenceStep::Move { fingers, direction, distance }, PerformedSequenceStep::Move { slots, direction: dir, distance: dst }) => {
                 if *fingers as usize != slots.len() || direction != dir {
+                    return false;
+                }
+
+                if let Some(d) = distance
+                    && dst < d
+                {
                     return false;
                 }
             }

@@ -5,12 +5,21 @@ use std::sync::{Arc, Mutex};
 use crate::config::{Config, Direction, Edge, Gesture, RepeatMode};
 use crate::Window;
 use crate::args::Args;
-use crate::sequence_step::PerformedSequenceStep;
+use crate::sequence_step::{DefinedSequenceStep, PerformedSequenceStep};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
     pub x: u16,
     pub y: u16,
+}
+
+impl Position {
+    pub fn distance(&self, other: &Position) -> Position {
+        Position {
+            x: self.x.abs_diff(other.x),
+            y: self.y.abs_diff(other.y),
+        }
+    }
 }
 
 pub type State = HashMap<u8, Position>;
@@ -24,9 +33,12 @@ pub struct MoveThresholdUnits {
 #[derive(Debug)]
 pub struct GesturesManager<'a> {
     pub config: Config,
-    previous_state: State, // positions of fingers in the previous update
-    touch_down_state: State, // initial positions when fingers touch down
-    initial_touch_down_state: State, // initial positions when fingers touch down for the very first time
+    /// positions of fingers in the previous update
+    previous_state: State,
+    /// initial positions when fingers touch down
+    touch_down_state: State,
+    /// initial positions when fingers touch down for the very first time
+    initial_touch_down_state: State,
     performed_sequence: Vec<PerformedSequenceStep>,
     repeat_mode: RepeatMode,
     move_threshold_units: MoveThresholdUnits,
@@ -34,6 +46,7 @@ pub struct GesturesManager<'a> {
     active_window: Arc<Mutex<Window>>,
     args: &'a Args,
     slots_outside_ellipse: HashSet<u8>,
+    direction: Direction,
 }
 
 impl<'a> GesturesManager<'a> {
@@ -50,17 +63,24 @@ impl<'a> GesturesManager<'a> {
             active_window,
             args,
             slots_outside_ellipse: HashSet::new(),
+            direction: Direction::None,
         }
     }
 
-    fn update_last_step(&mut self, slot: u8, direction: &Direction) -> bool {
-        if let Some(PerformedSequenceStep::Move { slots, direction: dir }) = self.performed_sequence.last_mut()
-            && dir == direction
-        {
-            slots.insert(slot);
-            return true;
+    fn update_last_step(&mut self, slot: u8, direction: &Direction, distance: f32) -> bool {
+        match self.performed_sequence.last_mut() {
+            Some(PerformedSequenceStep::Move { slots, direction: dir, distance: dst }) if dir == direction => {
+                slots.insert(slot);
+                let size = match direction {
+                    Direction::Up | Direction::Down => self.touchpad_size.y,
+                    Direction::Left | Direction::Right => self.touchpad_size.x,
+                    Direction::None => return false,
+                };
+                *dst = distance / size as f32;
+                true
+            }
+            _ => false
         }
-        false
     }
 
     fn is_at_edge(&self, pos: &Position) -> Option<Edge> {
@@ -96,6 +116,9 @@ impl<'a> GesturesManager<'a> {
             return;
         }
 
+        let mut slots_at_edge = HashSet::new();
+        let mut slots_edge = Edge::None;
+
         for (slot, pos) in &state {
             if !self.touch_down_state.contains_key(slot) {
                 self.touch_down_state.insert(*slot, *pos);
@@ -108,10 +131,16 @@ impl<'a> GesturesManager<'a> {
                     if let Some(PerformedSequenceStep::MoveEdge { slots, .. }) = self.performed_sequence.last_mut() {
                         slots.insert(*slot);
                     } else {
-                        self.performed_sequence.push(PerformedSequenceStep::MoveEdge { slots: HashSet::from([*slot]), edge, direction: Direction::None });
+                        slots_at_edge.insert(*slot);
+                        slots_edge = edge;
                     }
                 }
             }
+        }
+
+        // Perform edge move if all slots are at the edge
+        if slots_at_edge.len() == state.len() {
+            self.performed_sequence.push(PerformedSequenceStep::MoveEdge { slots: slots_at_edge, edge: slots_edge, direction: Direction::None });
         }
 
         let lifted_slots = self.touch_down_state
@@ -155,7 +184,7 @@ impl<'a> GesturesManager<'a> {
             }
         }
 
-        for (slot, pos) in state.clone().into_iter() {
+        for (&slot, pos) in &state {
             let start_pos = match self.touch_down_state.get(&slot) {
                 Some(pos) => *pos,
                 _ => continue,
@@ -163,9 +192,27 @@ impl<'a> GesturesManager<'a> {
 
             if self.point_outside_of_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64, false) {
                 let direction = self.point_side_in_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64);
+                self.direction = direction;
 
-                if !self.update_last_step(slot, &direction) {
-                    self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction });
+                let distance = if let Some(initial_touch_down_position) = self.initial_touch_down_state.get(&slot) {
+                    let distance = pos.distance(initial_touch_down_position);
+                    match direction {
+                        Direction::Up | Direction::Down => distance.y,
+                        Direction::Left | Direction::Right => distance.x,
+                        Direction::None => 0,
+                    }
+                } else {
+                    0
+                };
+
+                if !self.update_last_step(slot, &direction, distance as f32) {
+                    let size = match direction {
+                        Direction::Up | Direction::Down => self.touchpad_size.y,
+                        Direction::Left | Direction::Right => self.touchpad_size.x,
+                        Direction::None => continue,
+                    };
+                    let distance = distance as f32 / size as f32;
+                    self.performed_sequence.push(PerformedSequenceStep::Move { slots: HashSet::from([slot]), direction, distance });
                 }
 
                 if let Some(p) = self.touch_down_state.get_mut(&slot) {
@@ -174,6 +221,17 @@ impl<'a> GesturesManager<'a> {
                 }
 
                 self.slots_outside_ellipse.insert(slot);
+            }
+
+            if let Some(initial_touch_down_position) = self.initial_touch_down_state.get(&slot) {
+                let distance = pos.distance(initial_touch_down_position);
+                let distance = match self.direction {
+                    Direction::Up | Direction::Down => distance.y,
+                    Direction::Left | Direction::Right => distance.x,
+                    Direction::None => continue,
+                };
+                let direction = self.direction;
+                self.update_last_step(slot, &direction, distance as f32);
             }
         }
 
@@ -184,9 +242,7 @@ impl<'a> GesturesManager<'a> {
             self.match_gestures(RepeatMode::Slide);
         }
 
-        if state.len() > self.previous_state.len()
-            && !self.performed_sequence.is_empty()
-        {
+        if state.len() > self.previous_state.len() && !self.performed_sequence.is_empty() {
             let is_edge = matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::MoveEdge { .. }));
 
             let new_slot = *state.keys().find(|k| !self.previous_state.contains_key(k)).unwrap();
@@ -272,17 +328,39 @@ impl<'a> GesturesManager<'a> {
             .collect::<Vec<_>>();
 
         if !matching_gestures.is_empty() {
-            let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
-            if self.args.verbose {
-                println!("Matched gestures: {:?}", names);
-            }
+            if self.config.options.run_all_matches {
+                let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
+                if self.args.verbose {
+                    println!("Matched gestures: {:?}", names);
+                }
 
-            for gesture in &matching_gestures {
-                self.run_command(&gesture.command);
+                for gesture in &matching_gestures {
+                    self.run_command(&gesture.command);
+                }
+            } else {
+                let mut matched_gesture = &matching_gestures[0];
+                let mut distance = 0.0f32;
+
+                for gesture in matching_gestures.iter().skip(1) {
+                    for step in &gesture.sequence {
+                        if let DefinedSequenceStep::Move { distance: dst, .. } = step
+                            && let Some(dst) = dst
+                            && *dst > distance
+                        {
+                            distance = *dst;
+                            matched_gesture = gesture;
+                        }
+                    }
+                }
+
+                if self.args.verbose {
+                    println!("Matched gesture: {:?}", matched_gesture.name);
+                }
+
+                self.run_command(&matched_gesture.command);
             }
 
             self.repeat_mode = repeat_mode;
-
             return true;
         }
 

@@ -12,14 +12,12 @@ options:
     threshold: 0.05
     sensitivity: 0.5
 
-gestures:
-  - name: Previous workspace
-    sequence:
-      - fingers: 4
-        action: move left
-    repeat_mode: slide
-    command: hyprctl dispatch workspace r-1
+  run_all_matches: false
 
+  distance:
+    long: 0.4
+
+gestures:
   - name: Previous workspace
     sequence:
       - fingers: 1
@@ -27,13 +25,6 @@ gestures:
         edge: bottom
     repeat_mode: slide
     command: hyprctl dispatch workspace r-1
-
-  - name: Next workspace
-    sequence:
-      - fingers: 4
-        action: move right
-    repeat_mode: slide
-    command: hyprctl dispatch workspace r+1
 
   - name: Next workspace
     sequence:

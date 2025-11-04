@@ -16,8 +16,7 @@ gestures:
         action: move down
       - fingers: 3
         action: move left
-      - fingers: 3
-        action: move up
+        distance: long
     repeat_mode: tap
     command: playerctl position 0
 
@@ -42,3 +41,21 @@ gestures:
         action: move down
     repeat_mode: tap
     command: playerctl previous
+
+  - name: playerctl position 5-
+    sequence:
+      - fingers: 3
+        action: move down
+      - fingers: 3
+        action: move left
+    repeat_mode: tap
+    command: playerctl position 5-
+
+  - name: playerctl position 5+
+    sequence:
+      - fingers: 3
+        action: move down
+      - fingers: 3
+        action: move right
+    repeat_mode: tap
+    command: playerctl position 5+
