@@ -23,9 +23,9 @@ pub struct Window {
 
 fn init_logger(args: &Args) {
     let level_filter = match args.verbose {
+        0 => log::LevelFilter::Error,
         1 => log::LevelFilter::Info,
-        2 => log::LevelFilter::Debug,
-        _ => log::LevelFilter::Error,
+        2.. => log::LevelFilter::Debug,
     };
     env_logger::Builder::new()
         .format_timestamp(None)
