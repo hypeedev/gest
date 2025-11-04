@@ -21,23 +21,6 @@ pub enum Edge {
     None,
 }
 
-// TODO: Add a `distance` field to `Gesture` that will specify the minimum distance a move must cover to be considered valid.
-/*
-options:
-    distance:
-        short: 0.15
-        medium: 0.3
-        long: 0.5
-
-- fingers: 3
-  action: move up
-  distance: 0.3
-
-- fingers: 3
-  action: move up
-  distance: short|medium|long
-*/
-
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum RepeatMode {
@@ -123,8 +106,6 @@ pub struct ConfigRaw {
     pub options: Options,
     #[serde(default)]
     pub gestures: Vec<GestureRaw>,
-    #[serde(default)]
-    pub application_gestures: ApplicationGesturesRaw,
 }
 
 #[derive(Debug)]
@@ -176,17 +157,6 @@ impl Config {
                     }
                 }
             }
-        }
-
-        for (app_name, gestures) in config_raw.application_gestures {
-            let gestures = gestures.iter().map(|g| {
-                Gesture::from_raw(
-                    g.clone(),
-                    &config_raw.options.distance,
-                )
-            }).collect::<Vec<_>>();
-
-            dbg!(&app_name, &gestures);
         }
 
         Ok(Config {

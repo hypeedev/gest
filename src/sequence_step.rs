@@ -63,13 +63,12 @@ impl DefinedSequenceStep {
                 };
                 DefinedSequenceStep::Move { fingers, direction, distance }
             }
-            DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction } => {
-                DefinedSequenceStep::MoveEdge { fingers, edge, direction }
-            }
+            DefinedSequenceStepRaw::MoveEdge { fingers, edge, direction } => DefinedSequenceStep::MoveEdge { fingers, edge, direction }
         }
     }
 }
 
+// TODO: add distance to edge moves
 impl<'de> serde::Deserialize<'de> for DefinedSequenceStepRaw {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

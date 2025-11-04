@@ -25,7 +25,7 @@ fn init_logger(args: &Args) {
     let level_filter = match args.verbose {
         1 => log::LevelFilter::Info,
         2 => log::LevelFilter::Debug,
-        _ => return
+        _ => log::LevelFilter::Error,
     };
     env_logger::Builder::new()
         .format_timestamp(None)
