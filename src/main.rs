@@ -1,3 +1,5 @@
+// TODO: Add an option to enable both slide and tap repeat modes
+
 mod gestures;
 mod input;
 mod config;
@@ -11,7 +13,7 @@ use evdev::{AbsoluteAxisCode, EventType};
 use clap::Parser;
 use std::path::Path;
 use crate::config::Config;
-use crate::gestures::{GesturesManager, Position};
+use crate::gestures::{GesturesManager, Position, State};
 use crate::input::{calculate_move_threshold_units, get_touchpad_device, get_touchpad_size};
 use crate::args::Args;
 
@@ -105,11 +107,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             EventType::SYNCHRONIZATION => {
-                let filtered_state = state.iter()
-                    .filter_map(|(slot, pos)| {
-                        Some((*slot, Position { x: pos.0?, y: pos.1? }))
-                    })
-                    .collect();
+                let mut filtered_state = State::default();
+                for (u8, (pos_x, pos_y)) in &state {
+                    if let (Some(x), Some(y)) = (pos_x, pos_y) {
+                        filtered_state.positions.insert(*u8, Position { x: *x, y: *y });
+                    }
+                }
                 gestures_manager.update_state(filtered_state);
             },
             _ => continue,
