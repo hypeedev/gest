@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use regex::Regex;
+use bitflags::bitflags;
 use crate::sequence_step::{DefinedSequenceStep, DefinedSequenceStepRaw};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -21,13 +22,32 @@ pub enum Edge {
     None,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum RepeatMode {
-    #[default]
-    None,
-    Tap,
-    Slide,
+bitflags! {
+    #[derive(Debug, Clone, PartialEq, Default)]
+    pub struct RepeatMode: u8 {
+        const None = 0b00;
+        const Tap = 0b01;
+        const Slide = 0b10;
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RepeatMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut repeat_mode = RepeatMode::None;
+        let s: String = serde::Deserialize::deserialize(deserializer)?;
+        for mode in s.split_whitespace().collect::<Vec<_>>() {
+            match mode.to_lowercase().as_str() {
+                "none" => {},
+                "tap" => { repeat_mode.insert(RepeatMode::Tap); },
+                "slide" => { repeat_mode.insert(RepeatMode::Slide); },
+                _ => return Err(serde::de::Error::custom(format!("Invalid repeat mode: {}", mode))),
+            }
+        }
+        Ok(repeat_mode)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +89,7 @@ pub struct EdgeOptions {
 }
 
 impl EdgeOptions {
-    fn default_threshold() -> f32 { 0.1 }
+    fn default_threshold() -> f32 { 0.05 }
 
     fn default_sensitivity() -> f32 { 0.5 }
 }

@@ -1,5 +1,3 @@
-// TODO: Add an option to enable both slide and tap repeat modes
-
 mod gestures;
 mod input;
 mod config;

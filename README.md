@@ -45,13 +45,13 @@ gestures:
       - fingers: 4
         action: move left
     command: hyprctl dispatch workspace r-1
-    
+
   - name: Brightness up
     sequence:
        - fingers: 1
          action: move up
          edge: right
-    repeat_mode: slide
+    repeat_mode: slide tap
     command: brightnessctl set 10%+
 
 application_gestures:
@@ -67,9 +67,9 @@ application_gestures:
 - `import`: List of additional configuration files to import.
 - `options`: Global options for gesture detection.
   - `move_threshold`: Minimum movement (as a fraction of touchpad size) to register a move action.
-  - `edge`: Edge detection settings.
-    - `threshold`: Distance from edge to consider as edge move.
-    - `sensitivity`: Sensitivity multiplier for edge moves.
+  - `edge` (optional): Edge detection settings.
+    - `threshold` (optional): Distance from edge to consider as edge move.
+    - `sensitivity` (optional): Sensitivity multiplier for edge moves.
 - `gestures`: List of global gestures.
   - `name`: Name of the gesture.
   - `sequence`: List of steps defining the gesture.
@@ -77,7 +77,7 @@ application_gestures:
     - `action`: Action type (`move left/right/up/down`, `touch up/down`).
     - `edge` (optional): Edge specification for edge moves (`top`, `bottom`, `left`, `right`).
     - `distance` (optional): Minimum distance (as a fraction of touchpad size) for this step.
-  - `repeat_mode` (optional): How the gesture can be repeated (`tap`, `slide`).
+  - `repeat_mode` (optional): How the gesture can be repeated (`tap`, `slide`, or any combination of supported modes separated with a space).
   - `command`: Shell command to execute when the gesture is recognized.
 - `application_gestures`: Mapping of application regex patterns to their specific gestures. (see [examples/vim.yaml](examples/vim.yaml))
 

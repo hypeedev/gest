@@ -1,3 +1,6 @@
+// TODO: prevent the "top edge -> down -> right" gesture being misclassified
+// It is currently detected first as MoveEdgeTop-Down, then as MoveEdgeTop-Right
+
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::process::Stdio;
@@ -59,6 +62,8 @@ pub struct GesturesManager {
     touch_down_state: State,
     /// initial positions when fingers touch down for the very first time
     initial_touch_down_state: State,
+    /// positions of fingers right before lifting
+    before_lift_state: State,
     performed_sequence: Vec<PerformedSequenceStep>,
     repeat_mode: RepeatMode,
     move_threshold_units: MoveThresholdUnits,
@@ -75,6 +80,7 @@ impl GesturesManager {
             previous_state: State::default(),
             touch_down_state: State::default(),
             initial_touch_down_state: State::default(),
+            before_lift_state: State::default(),
             performed_sequence: Vec::new(),
             repeat_mode: RepeatMode::None,
             move_threshold_units,
@@ -134,6 +140,28 @@ impl GesturesManager {
             return;
         }
 
+        // Reassign new slots to previous positions if they are close enough
+        // let new_slots = state.positions.clone()
+        //     .into_iter()
+        //     .filter(|(slot, _)| !self.previous_state.positions.contains_key(slot))
+        //     .collect::<Vec<_>>();
+        // for (new_slot, new_pos) in &new_slots {
+        //     for (previous_slot, previous_pos) in &self.before_lift_state.positions {
+        //         if new_slot == previous_slot {
+        //             continue;
+        //         }
+        //
+        //         if !self.point_outside_of_ellipse(new_pos, previous_pos, false) {
+        //             log::debug!("Reassigning slot {} to previous slot {}", new_slot, previous_slot);
+        //             log::debug!("New position: {:?}, Previous position: {:?}", new_pos, previous_pos);
+        //             dbg!(&self.performed_sequence);
+        //             if let Some(entry) = state.positions.remove(new_slot) {
+        //                 state.positions.insert(*previous_slot, entry);
+        //             }
+        //         }
+        //     }
+        // }
+
         let mut slots_at_edge = HashSet::new();
         let mut slots_edge = Edge::None;
 
@@ -165,9 +193,8 @@ impl GesturesManager {
 
         let lifted_slots = self.touch_down_state.positions
             .extract_if(|slot, _| !state.positions.contains_key(slot))
-            .map(|(slot, _)| slot)
             .collect::<Vec<_>>();
-        for slot in lifted_slots {
+        for (slot, pos) in lifted_slots {
             if let Some(PerformedSequenceStep::TouchUp { slots }) = self.performed_sequence.last_mut() {
                 slots.insert(slot);
             } else {
@@ -179,6 +206,8 @@ impl GesturesManager {
 
                 self.slots_outside_ellipse.remove(&slot);
             }
+
+            self.before_lift_state.positions.insert(slot, pos);
         }
 
         if matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::MoveEdge { .. })) {
@@ -381,7 +410,7 @@ impl GesturesManager {
 
     fn does_gesture_match(&self, gesture: &Gesture, repeat_mode: &RepeatMode) -> bool {
         if gesture.sequence.len() != self.performed_sequence.len()
-            || gesture.repeat_mode != RepeatMode::Slide && *repeat_mode == RepeatMode::Slide
+            || !gesture.repeat_mode.contains(RepeatMode::Slide) && *repeat_mode == RepeatMode::Slide
         {
             return false;
         }
