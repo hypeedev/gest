@@ -64,6 +64,8 @@ pub struct GesturesManager {
     initial_touch_down_state: State,
     /// positions of fingers right before lifting
     before_lift_state: State,
+    /// (distance, position) of the farthest point from the initial touch down centroid
+    max_distance_position: (f64, Position),
     performed_sequence: Vec<PerformedSequenceStep>,
     repeat_mode: RepeatMode,
     move_threshold_units: MoveThresholdUnits,
@@ -81,6 +83,7 @@ impl GesturesManager {
             touch_down_state: State::default(),
             initial_touch_down_state: State::default(),
             before_lift_state: State::default(),
+            max_distance_position: (0.0, Position { x: 0, y: 0 }),
             performed_sequence: Vec::new(),
             repeat_mode: RepeatMode::None,
             move_threshold_units,
@@ -145,8 +148,11 @@ impl GesturesManager {
             self.previous_state.positions.clear();
             self.touch_down_state.positions.clear();
             self.initial_touch_down_state.positions.clear();
+            self.before_lift_state.positions.clear();
             self.performed_sequence.clear();
             self.slots_outside_ellipse.clear();
+            self.max_distance_position = (0.0, Position { x: 0, y: 0 });
+            self.direction = Direction::None;
             return;
         }
 
@@ -227,6 +233,12 @@ impl GesturesManager {
 
                 if self.point_outside_of_ellipse(&centroid, &touch_down_centroid, true) {
                     let direction = self.point_side_in_ellipse(&centroid, &touch_down_centroid);
+
+                    if self.direction != direction && self.direction != Direction::None {
+                        for pos in self.initial_touch_down_state.positions.values_mut() {
+                            *pos = self.max_distance_position.1;
+                        }
+                    }
                     self.direction = direction;
 
                     let distance = centroid.distance(&self.initial_touch_down_state.centroid().unwrap());
@@ -235,6 +247,11 @@ impl GesturesManager {
                         Direction::Left | Direction::Right => (distance.x, self.touchpad_size.x),
                         Direction::None => return,
                     };
+
+                    // Store max distance position for direction changes
+                    if distance as f64 > self.max_distance_position.0 {
+                        self.max_distance_position = (distance as f64, centroid);
+                    }
 
                     if let Some(PerformedSequenceStep::MoveEdge { direction: dir, distance: dst, .. }) = self.performed_sequence.last_mut() {
                         *dir = direction;
@@ -245,7 +262,6 @@ impl GesturesManager {
 
                     // Reset start positions for all slots
                     for (slot, pos) in &state.positions {
-                        // self.touch_down_state.positions.insert(*slot, *pos);
                         if let Some(p) = self.touch_down_state.positions.get_mut(slot) {
                             p.x = pos.x;
                             p.y = pos.y;
