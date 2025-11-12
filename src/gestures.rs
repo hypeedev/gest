@@ -103,6 +103,16 @@ impl GesturesManager {
                 *dst = distance / size as f32;
                 true
             }
+            Some(PerformedSequenceStep::MoveEdge { slots, direction: dir, distance: dst, .. }) if dir == direction => {
+                slots.insert(slot);
+                let size = match direction {
+                    Direction::Up | Direction::Down => self.touchpad_size.y,
+                    Direction::Left | Direction::Right => self.touchpad_size.x,
+                    Direction::None => return false,
+                };
+                *dst = distance / size as f32;
+                true
+            }
             _ => false
         }
     }
@@ -187,7 +197,8 @@ impl GesturesManager {
             self.performed_sequence.push(PerformedSequenceStep::MoveEdge {
                 slots: slots_at_edge,
                 edge: slots_edge,
-                direction: Direction::None
+                direction: Direction::None,
+                distance: 0.0,
             });
         }
 
@@ -211,34 +222,41 @@ impl GesturesManager {
         }
 
         if matches!(self.performed_sequence.last(), Some(PerformedSequenceStep::MoveEdge { .. })) {
-            for (slot, pos) in &state.positions {
-                let start_pos = match self.touch_down_state.positions.get(slot) {
-                    Some(pos) => *pos,
-                    _ => continue,
-                };
+            if let Some(centroid) = state.centroid() {
+                let touch_down_centroid = self.touch_down_state.centroid().unwrap();
 
-                if self.point_outside_of_ellipse(pos, &start_pos, true) {
-                    let direction = self.point_side_in_ellipse(pos.x as f64, pos.y as f64, start_pos.x as f64, start_pos.y as f64);
-                    if let Some(PerformedSequenceStep::MoveEdge { direction: dir, .. }) = self.performed_sequence.last_mut() {
+                if self.point_outside_of_ellipse(&centroid, &touch_down_centroid, true) {
+                    let direction = self.point_side_in_ellipse(&centroid, &touch_down_centroid);
+                    self.direction = direction;
+
+                    let distance = centroid.distance(&self.initial_touch_down_state.centroid().unwrap());
+                    let (distance, size) = match direction {
+                        Direction::Up | Direction::Down => (distance.y, self.touchpad_size.y),
+                        Direction::Left | Direction::Right => (distance.x, self.touchpad_size.x),
+                        Direction::None => return,
+                    };
+
+                    if let Some(PerformedSequenceStep::MoveEdge { direction: dir, distance: dst, .. }) = self.performed_sequence.last_mut() {
                         *dir = direction;
+                        *dst = distance as f32 / size as f32;
                     }
 
                     self.match_gestures(RepeatMode::Slide);
 
                     // Reset start positions for all slots
                     for (slot, pos) in &state.positions {
-                        self.touch_down_state.positions.insert(*slot, *pos);
+                        // self.touch_down_state.positions.insert(*slot, *pos);
+                        if let Some(p) = self.touch_down_state.positions.get_mut(slot) {
+                            p.x = pos.x;
+                            p.y = pos.y;
+                        }
                     }
                 }
             }
-        }
-
-        if let Some(centroid) = state.centroid() {
+        } else if let Some(centroid) = state.centroid() {
             let touch_down_centroid = self.touch_down_state.centroid().unwrap();
-            if self.point_outside_of_ellipse( &centroid, &touch_down_centroid, false) {
-                let direction = self.point_side_in_ellipse(centroid.x as f64, centroid.y as f64,
-                    touch_down_centroid.x as f64,
-                    touch_down_centroid.y as f64);
+            if self.point_outside_of_ellipse(&centroid, &touch_down_centroid, false) {
+                let direction = self.point_side_in_ellipse(&centroid, &touch_down_centroid);
                 self.direction = direction;
 
                 let distance = centroid.distance(&self.initial_touch_down_state.centroid().unwrap());
@@ -312,9 +330,9 @@ impl GesturesManager {
         v > 1.0
     }
 
-    pub fn point_side_in_ellipse(&self, x: f64, y: f64, h: f64, k: f64) -> Direction {
-        let dx = x - h;
-        let dy = y - k;
+    pub fn point_side_in_ellipse(&self, point: &Position, center: &Position) -> Direction {
+        let dx = point.x as f64 - center.x as f64;
+        let dy = point.y as f64 - center.y as f64;
 
         let nx = dx / self.move_threshold_units.x as f64;
         let ny = dy / self.move_threshold_units.y as f64;
@@ -384,12 +402,16 @@ impl GesturesManager {
 
                 for gesture in matching_gestures.iter().skip(1) {
                     for step in &gesture.sequence {
-                        if let DefinedSequenceStep::Move { distance: dst, .. } = step
-                            && let Some(dst) = dst
-                            && *dst > distance
-                        {
-                            distance = *dst;
-                            matched_gesture = gesture;
+                        match step {
+                            DefinedSequenceStep::Move { distance: dst, .. } | DefinedSequenceStep::MoveEdge { distance: dst, .. } => {
+                                if let Some(dst) = dst
+                                    && *dst > distance
+                                {
+                                    distance = *dst;
+                                    matched_gesture = gesture;
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
