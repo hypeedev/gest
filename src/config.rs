@@ -19,7 +19,6 @@ pub enum Edge {
     Bottom,
     Left,
     Right,
-    None,
 }
 
 bitflags! {
