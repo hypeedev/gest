@@ -197,7 +197,9 @@ struct ImportedConfigRaw {
 }
 
 fn are_gestures_conflicting(g1: &Gesture, g2: &Gesture) -> bool {
-    if g1.sequence.len() != g2.sequence.len() {
+    if g1.sequence.len() != g2.sequence.len()
+        || g1.edge != g2.edge
+    {
         return false;
     }
 
