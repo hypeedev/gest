@@ -13,7 +13,7 @@ pub enum Direction {
     None,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Edge {
     Top,

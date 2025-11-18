@@ -133,11 +133,31 @@ impl GesturesEngine {
         for (slot, pos) in &state.positions {
             self.touch_down_state.positions.entry(*slot).or_insert(*pos);
             self.sequence_step_start_state.positions.entry(*slot).or_insert(*pos);
+        }
 
-            if !self.gesture_in_progress && let Some(edge) = self.at_edge(pos) {
-                self.starting_edge = Some(edge);
+        // Determine starting edge if not already set
+        if self.performed_sequence.is_empty() {
+            let mut edges = self.touch_down_state.positions.values().map(|pos| self.at_edge(pos));
+            if let Some(first_edge) = edges.next() && edges.all(|edge| edge == first_edge) {
+                self.starting_edge = first_edge;
             }
         }
+
+        // if !self.gesture_in_progress {
+        //     let mut slots_edge: Option<Edge> = None;
+        //     for pos in state.positions.values() {
+        //         if self.at_edge(pos).is_none() {
+        //             slots_edge = None;
+        //             break;
+        //         }
+        //     }
+        //     // if let Some(edge) = slots_edge {
+        //     //     self.starting_edge = Some(edge);
+        //     // }
+        //     if slots_edge.is_some() {
+        //         self.starting_edge = slots_edge;
+        //     }
+        // }
 
         self.gesture_in_progress = true;
 
