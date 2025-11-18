@@ -143,22 +143,6 @@ impl GesturesEngine {
             }
         }
 
-        // if !self.gesture_in_progress {
-        //     let mut slots_edge: Option<Edge> = None;
-        //     for pos in state.positions.values() {
-        //         if self.at_edge(pos).is_none() {
-        //             slots_edge = None;
-        //             break;
-        //         }
-        //     }
-        //     // if let Some(edge) = slots_edge {
-        //     //     self.starting_edge = Some(edge);
-        //     // }
-        //     if slots_edge.is_some() {
-        //         self.starting_edge = slots_edge;
-        //     }
-        // }
-
         self.gesture_in_progress = true;
 
         let lifted_slots = self.touch_down_state.positions
