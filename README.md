@@ -48,20 +48,20 @@ gestures:
 
   - name: Brightness up
     sequence:
-       - fingers: 1
-         action: move up
-         edge: right
+      - fingers: 1
+        action: move up
+    edge: right
     repeat_mode: slide tap
     command: brightnessctl set 10%+
 
 application_gestures:
    firefox.*:
-      - name: Previous tab
-        sequence:
-           - fingers: 3
-             action: move left
-        repeat_mode: tap
-        command: ydotool key 29:1 42:1 15:1 15:0 42:0 29:0
+     - name: Previous tab
+       sequence:
+         - fingers: 3
+           action: move left
+       repeat_mode: tap
+       command: ydotool key 29:1 42:1 15:1 15:0 42:0 29:0
 ```
 
 - `import`: List of additional configuration files to import.
@@ -75,8 +75,8 @@ application_gestures:
   - `sequence`: List of steps defining the gesture.
     - `fingers`: Number of fingers involved in the step.
     - `action`: Action type (`move left/right/up/down`, `touch up/down`).
-    - `edge` (optional): Edge specification for edge moves (`top`, `bottom`, `left`, `right`).
     - `distance` (optional): Minimum distance (as a fraction of touchpad size) for this step.
+  - `edge` (optional): Touchpad edge (`top`, `bottom`, `left`, `right`) where the gesture must begin.
   - `repeat_mode` (optional): How the gesture can be repeated (`tap`, `slide`, or any combination of supported modes separated with a space).
   - `command`: Shell command to execute when the gesture is recognized.
 - `application_gestures`: Mapping of application regex patterns to their specific gestures. (see [examples/vim.yaml](examples/vim.yaml))
