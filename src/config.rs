@@ -13,7 +13,8 @@ pub enum Direction {
     None,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Edge {
     Top,
     Bottom,
@@ -53,6 +54,7 @@ impl<'de> serde::Deserialize<'de> for RepeatMode {
 pub struct Gesture {
     pub name: String,
     pub sequence: Vec<DefinedSequenceStep>,
+    pub edge: Option<Edge>,
     pub repeat_mode: RepeatMode,
     pub command: String,
 }
@@ -61,6 +63,7 @@ pub struct Gesture {
 pub struct GestureRaw {
     pub name: String,
     pub sequence: Vec<DefinedSequenceStepRaw>,
+    pub edge: Option<Edge>,
     #[serde(default)]
     pub repeat_mode: RepeatMode,
     pub command: String,
@@ -73,6 +76,7 @@ impl Gesture {
             sequence: raw.sequence.into_iter().map(|step_raw| {
                 DefinedSequenceStep::from_raw(step_raw, distances)
             }).collect(),
+            edge: raw.edge,
             repeat_mode: raw.repeat_mode,
             command: raw.command,
         }
