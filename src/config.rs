@@ -149,7 +149,12 @@ impl Config {
         if !config_raw.import.is_empty() {
             let parent_path = path.as_ref().parent().unwrap_or_else(|| Path::new("."));
             for import_path in &config_raw.import {
-                let import_content = std::fs::read_to_string(parent_path.join(import_path))?;
+                let path = parent_path.join(import_path);
+                if !std::fs::exists(&path).unwrap() {
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("Imported config file not found: {}", import_path))));
+                }
+
+                let import_content = std::fs::read_to_string(&path)?;
                 let imported_config: ImportedConfigRaw = serde_yaml::from_str(&import_content)?;
 
                 if let Some(imported_gestures) = &imported_config.gestures {
