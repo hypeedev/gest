@@ -40,7 +40,6 @@ impl<'de> serde::Deserialize<'de> for RepeatMode {
         let s: String = serde::Deserialize::deserialize(deserializer)?;
         for mode in s.split_whitespace().collect::<Vec<_>>() {
             match mode.to_lowercase().as_str() {
-                "none" => {},
                 "tap" => { repeat_mode.insert(RepeatMode::Tap); },
                 "slide" => { repeat_mode.insert(RepeatMode::Slide); },
                 _ => return Err(serde::de::Error::custom(format!("Invalid repeat mode: {}", mode))),
@@ -166,16 +165,30 @@ impl Config {
                             Gesture::from_raw(g_raw.clone(), &config_raw.options.distance)
                         }).collect::<Vec<_>>();
 
-                        if let Some(regex_str) = app_name.strip_prefix("title:") {
-                            let regex = Regex::new(regex_str)?;
-                            application_gestures.by_title.push((regex, gestures));
-                        } else if let Some(regex_str) = app_name.strip_prefix("class:") {
-                            let regex = Regex::new(regex_str)?;
-                            application_gestures.by_class.push((regex, gestures));
-                        } else {
-                            // Treat as class
-                            let regex = Regex::new(&app_name)?;
-                            application_gestures.by_class.push((regex, gestures));
+                        if let Some((regex_str1, regex_str2)) = app_name.split_once(',') {
+                            if let Some(regex_class_str) = regex_str1.strip_prefix("class:") {
+                                let class_regex = Regex::new(regex_class_str)?;
+                                application_gestures.by_class.push((class_regex, gestures.clone()));
+                                if let Some(regex_title_str) = regex_str2.strip_prefix("title:") {
+                                    let title_regex = Regex::new(regex_title_str)?;
+                                    application_gestures.by_title.push((title_regex, gestures));
+                                } else {
+                                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
+                                }
+                            } else if let Some(regex_title_str) = regex_str1.strip_prefix("title:") {
+                                let title_regex = Regex::new(regex_title_str)?;
+                                application_gestures.by_title.push((title_regex, gestures.clone()));
+                                if let Some(regex_class_str) = regex_str2.strip_prefix("class:") {
+                                    let class_regex = Regex::new(regex_class_str)?;
+                                    application_gestures.by_class.push((class_regex, gestures));
+                                } else {
+                                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
+                                }
+                            } else {
+                                // Treat as class
+                                let regex = Regex::new(&app_name)?;
+                                application_gestures.by_class.push((regex, gestures));
+                            }
                         }
                     }
                 }
