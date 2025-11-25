@@ -170,30 +170,36 @@ impl Config {
                             Gesture::from_raw(g_raw.clone(), &config_raw.options.distance)
                         }).collect::<Vec<_>>();
 
-                        if let Some((regex_str1, regex_str2)) = app_name.split_once(',') {
-                            if let Some(regex_class_str) = regex_str1.strip_prefix("class:") {
-                                let class_regex = Regex::new(regex_class_str)?;
-                                application_gestures.by_class.push((class_regex, gestures.clone()));
-                                if let Some(regex_title_str) = regex_str2.strip_prefix("title:") {
-                                    let title_regex = Regex::new(regex_title_str)?;
-                                    application_gestures.by_title.push((title_regex, gestures));
+                        if let Some((first, second)) = app_name.split_once(',') {
+                            let mut class_regex = None;
+                            let mut title_regex = None;
+
+                            for part in [first, second] {
+                                if let Some(s) = part.strip_prefix("class:") {
+                                    class_regex = Some(Regex::new(s)?);
+                                } else if let Some(s) = part.strip_prefix("title:") {
+                                    title_regex = Some(Regex::new(s)?);
                                 } else {
                                     return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
                                 }
-                            } else if let Some(regex_title_str) = regex_str1.strip_prefix("title:") {
-                                let title_regex = Regex::new(regex_title_str)?;
-                                application_gestures.by_title.push((title_regex, gestures.clone()));
-                                if let Some(regex_class_str) = regex_str2.strip_prefix("class:") {
-                                    let class_regex = Regex::new(regex_class_str)?;
-                                    application_gestures.by_class.push((class_regex, gestures));
-                                } else {
-                                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
-                                }
-                            } else {
-                                // Treat as class
-                                let regex = Regex::new(&app_name)?;
-                                application_gestures.by_class.push((regex, gestures));
                             }
+
+                            if let Some(regex) = class_regex {
+                                application_gestures.by_class.push((regex, gestures.clone()));
+                            }
+                            if let Some(regex) = title_regex {
+                                application_gestures.by_title.push((regex, gestures));
+                            }
+                        } else if let Some(regex_title_str) = app_name.strip_prefix("title:") {
+                            let regex = Regex::new(regex_title_str)?;
+                            application_gestures.by_title.push((regex, gestures));
+                        } else if let Some(regex_class_str) = app_name.strip_prefix("class:") {
+                            let regex = Regex::new(regex_class_str)?;
+                            application_gestures.by_title.push((regex, gestures));
+                        } else {
+                            // Treat as class
+                            let regex = Regex::new(&app_name)?;
+                            application_gestures.by_class.push((regex, gestures));
                         }
                     }
                 }
