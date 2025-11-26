@@ -72,18 +72,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = if let Some(config_file) = &args.config_file {
         Path::new(&config_file).to_path_buf()
     } else {
-        Config::get_config_path()
-            .ok_or("Could not determine config file path. Make sure that either XDG_CONFIG_PATH or HOME environment variables are set.")?
+        match Config::get_config_path() {
+            Some(path) => path,
+            None => {
+                log::error!("Could not determine config file path. Make sure that either XDG_CONFIG_PATH or HOME environment variables are set.");
+                std::process::exit(1);
+            }
+        }
     };
 
     log::debug!("Using config file: {:?}", config_path);
 
-    let config = Config::parse_from_file(config_path).map_err(|e| format!("Failed to parse config file: {}", e))?;
+    let config = match Config::parse_from_file(config_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            log::error!("Failed to parse config file: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     log::debug!("Loaded config: {:#?}", config);
 
-    let touchpad_device = get_touchpad_device().ok_or("No touchpad device found")?;
-    let touchpad_size = get_touchpad_size(&touchpad_device)?;
+    let touchpad_device = match get_touchpad_device() {
+        Some(device) => device,
+        None => {
+            log::error!("No touchpad device found.");
+            std::process::exit(1);
+        }
+    };
+    let touchpad_size = match get_touchpad_size(&touchpad_device) {
+        Ok(size) => size,
+        Err(e) => {
+            log::error!("Could not determine touchpad size: {}", e);
+            std::process::exit(1);
+        }
+    };
     let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.options.move_threshold);
 
     let mut gestures_manager = GesturesEngine::new(config, active_window, move_threshold_units, touchpad_size);

@@ -69,16 +69,19 @@ pub struct GestureRaw {
 }
 
 impl Gesture {
-    pub fn from_raw(raw: GestureRaw, distances: &HashMap<String, f32>) -> Self {
-        Gesture {
+    pub fn from_raw(raw: GestureRaw, distances: &HashMap<String, f32>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut sequence = Vec::new();
+        for step_raw in &raw.sequence {
+            sequence.push(DefinedSequenceStep::from_raw(step_raw.clone(), distances)?);
+        }
+
+        Ok(Gesture {
             name: raw.name,
-            sequence: raw.sequence.into_iter().map(|step_raw| {
-                DefinedSequenceStep::from_raw(step_raw, distances)
-            }).collect(),
+            sequence,
             edge: raw.edge,
             repeat_mode: raw.repeat_mode,
             command: raw.command,
-        }
+        })
     }
 }
 
@@ -142,10 +145,12 @@ pub struct Config {
 // TODO: clean this up
 impl Config {
     pub fn from_raw<P: AsRef<Path>>(path: P, config_raw: ConfigRaw, options: &Options) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut gestures = if let Some(gs) = &config_raw.gestures {
-            gs.iter().map(|g_raw| {
-                Gesture::from_raw(g_raw.clone(), &options.distance)
-            }).collect::<Vec<_>>()
+        let mut gestures = if let Some(raw_gestures) = &config_raw.gestures {
+            let mut gs = Vec::new();
+            for raw_gesture in raw_gestures {
+                gs.push(Gesture::from_raw(raw_gesture.clone(), &options.distance)?);
+            }
+            gs
         } else {
             Vec::new()
         };
@@ -178,10 +183,11 @@ impl Config {
         }
 
         if let Some(application_gestures_raw) = config_raw.application_gestures {
-            for (app_name, gestures) in application_gestures_raw {
-                let gestures = gestures.iter().map(|g_raw| {
-                    Gesture::from_raw(g_raw.clone(), &options.distance)
-                }).collect::<Vec<_>>();
+            for (app_name, raw_gestures) in application_gestures_raw {
+                let mut gestures = Vec::new();
+                for raw_gesture in &raw_gestures {
+                    gestures.push(Gesture::from_raw(raw_gesture.clone(), &options.distance)?);
+                }
 
                 if let Some((first, second)) = app_name.split_once(',') {
                     let mut class_regex = None;

@@ -40,8 +40,8 @@ pub enum DefinedSequenceStepRaw {
 }
 
 impl DefinedSequenceStep {
-    pub fn from_raw(raw: DefinedSequenceStepRaw, distances: &HashMap<String, f32>) -> Self {
-        match raw {
+    pub fn from_raw(raw: DefinedSequenceStepRaw, distances: &HashMap<String, f32>) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(match raw {
             DefinedSequenceStepRaw::TouchDown { fingers } => DefinedSequenceStep::TouchDown { fingers },
             DefinedSequenceStepRaw::TouchUp { fingers } => DefinedSequenceStep::TouchUp { fingers },
             DefinedSequenceStepRaw::Move { fingers, direction, distance } => {
@@ -49,10 +49,7 @@ impl DefinedSequenceStep {
                     Some(Distance::Variable(name)) => {
                         match distances.get(&name) {
                             Some(d) => Some(*d),
-                            None => {
-                                log::error!("Unknown distance: \"{}\"", name);
-                                None
-                            }
+                            None => return Err(format!("Unknown distance: \"{}\"", name).into()),
                         }
                     }
                     Some(Distance::Fixed(d)) => Some(d),
@@ -60,7 +57,7 @@ impl DefinedSequenceStep {
                 };
                 DefinedSequenceStep::Move { fingers, direction, distance }
             }
-        }
+        })
     }
 }
 
