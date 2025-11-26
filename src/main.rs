@@ -27,9 +27,24 @@ fn init_logger(args: &Args) {
         1 => log::LevelFilter::Info,
         2.. => log::LevelFilter::Debug,
     };
+
+    let target = if let Some(log_file) = &args.log_file {
+        let file = match std::fs::File::create(log_file) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Failed to create log file {}: {}", log_file, e);
+                std::process::exit(1);
+            }
+        };
+        env_logger::Target::Pipe(Box::new(file))
+    } else {
+        env_logger::Target::Stdout
+    };
+
     env_logger::Builder::new()
         .format_timestamp(None)
         .filter_level(level_filter)
+        .target(target)
         .init();
 }
 

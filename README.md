@@ -91,6 +91,7 @@ Usage: gest [OPTIONS]
 Options:
   -v, --verbose...                 Output verbosity level
   -c, --config-file <CONFIG_FILE>  Path to configuration file
+  -l, --log-file <LOG_FILE>        Path to log file (if the file exists, it will be overwritten)
   -h, --help                       Print help
 ```
 
