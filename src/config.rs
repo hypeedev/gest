@@ -82,7 +82,7 @@ impl Gesture {
     }
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct EdgeOptions {
     #[serde(default = "EdgeOptions::default_threshold")]
     pub threshold: f32,
@@ -96,7 +96,7 @@ impl EdgeOptions {
     fn default_sensitivity() -> f32 { 0.5 }
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Deserialize)]
 pub struct Options {
     #[serde(default = "Options::default_move_threshold")]
     pub move_threshold: f32,
@@ -125,9 +125,11 @@ pub struct ConfigRaw {
     #[serde(default)]
     pub import: Vec<String>,
     #[serde(default)]
-    pub options: Options,
+    pub options: Option<Options>,
     #[serde(default)]
-    pub gestures: Vec<GestureRaw>,
+    pub gestures: Option<Vec<GestureRaw>>,
+    #[serde(default)]
+    pub application_gestures: Option<ApplicationGesturesRaw>,
 }
 
 #[derive(Debug)]
@@ -139,10 +141,14 @@ pub struct Config {
 
 // TODO: clean this up
 impl Config {
-    pub fn from_raw<P: AsRef<Path>>(path: P, config_raw: ConfigRaw) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut gestures = config_raw.gestures.iter().map(|g_raw| {
-            Gesture::from_raw(g_raw.clone(), &config_raw.options.distance)
-        }).collect::<Vec<_>>();
+    pub fn from_raw<P: AsRef<Path>>(path: P, config_raw: ConfigRaw, options: &Options) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut gestures = if let Some(gs) = &config_raw.gestures {
+            gs.iter().map(|g_raw| {
+                Gesture::from_raw(g_raw.clone(), &options.distance)
+            }).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
 
         let mut application_gestures = ApplicationGestures::default();
 
@@ -154,70 +160,69 @@ impl Config {
                     return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("Imported config file not found: {}", import_path))));
                 }
 
-                let import_content = std::fs::read_to_string(&path)?;
-                let imported_config: ImportedConfigRaw = serde_yaml::from_str(&import_content)?;
+                let imported_config_raw: ConfigRaw = serde_yaml::from_str(&std::fs::read_to_string(&path)?)?;
 
-                if let Some(imported_gestures) = &imported_config.gestures {
-                    let imported_gestures = imported_gestures.iter().map(|g_raw| {
-                        Gesture::from_raw(g_raw.clone(), &config_raw.options.distance)
-                    });
-                    gestures.extend(imported_gestures);
+                // TODO: merge options?
+                if imported_config_raw.options.is_some() {
+                    log::warn!("Warning: Imported config file '{}' contains options which will be ignored.", import_path);
                 }
 
-                if let Some(app_gestures) = imported_config.application_gestures {
-                    for (app_name, gestures) in app_gestures {
-                        let gestures = gestures.iter().map(|g_raw| {
-                            Gesture::from_raw(g_raw.clone(), &config_raw.options.distance)
-                        }).collect::<Vec<_>>();
+                let imported_config = Config::from_raw(&path, imported_config_raw, options)?;
 
-                        if let Some((first, second)) = app_name.split_once(',') {
-                            let mut class_regex = None;
-                            let mut title_regex = None;
+                gestures.extend(imported_config.gestures);
 
-                            for part in [first, second] {
-                                if let Some(s) = part.strip_prefix("class:") {
-                                    class_regex = Some(Regex::new(s)?);
-                                } else if let Some(s) = part.strip_prefix("title:") {
-                                    title_regex = Some(Regex::new(s)?);
-                                } else {
-                                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
-                                }
-                            }
+                application_gestures.by_title.extend(imported_config.application_gestures.by_title);
+                application_gestures.by_class.extend(imported_config.application_gestures.by_class);
 
-                            if let Some(regex) = class_regex {
-                                application_gestures.by_class.push((regex, gestures.clone()));
-                            }
-                            if let Some(regex) = title_regex {
-                                application_gestures.by_title.push((regex, gestures));
-                            }
-                        } else if let Some(regex_title_str) = app_name.strip_prefix("title:") {
-                            let regex = Regex::new(regex_title_str)?;
-                            application_gestures.by_title.push((regex, gestures));
-                        } else if let Some(regex_class_str) = app_name.strip_prefix("class:") {
-                            let regex = Regex::new(regex_class_str)?;
-                            application_gestures.by_title.push((regex, gestures));
+            }
+        }
+
+        if let Some(application_gestures_raw) = config_raw.application_gestures {
+            for (app_name, gestures) in application_gestures_raw {
+                let gestures = gestures.iter().map(|g_raw| {
+                    Gesture::from_raw(g_raw.clone(), &options.distance)
+                }).collect::<Vec<_>>();
+
+                if let Some((first, second)) = app_name.split_once(',') {
+                    let mut class_regex = None;
+                    let mut title_regex = None;
+
+                    for part in [first, second] {
+                        if let Some(s) = part.strip_prefix("class:") {
+                            class_regex = Some(Regex::new(s)?);
+                        } else if let Some(s) = part.strip_prefix("title:") {
+                            title_regex = Some(Regex::new(s)?);
                         } else {
-                            // Treat as class
-                            let regex = Regex::new(&app_name)?;
-                            application_gestures.by_class.push((regex, gestures));
+                            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid application gesture key: {}", app_name))));
                         }
                     }
+
+                    if let Some(regex) = class_regex {
+                        application_gestures.by_class.push((regex, gestures.clone()));
+                    }
+                    if let Some(regex) = title_regex {
+                        application_gestures.by_title.push((regex, gestures));
+                    }
+                } else if let Some(regex_title_str) = app_name.strip_prefix("title:") {
+                    let regex = Regex::new(regex_title_str)?;
+                    application_gestures.by_title.push((regex, gestures));
+                } else if let Some(regex_class_str) = app_name.strip_prefix("class:") {
+                    let regex = Regex::new(regex_class_str)?;
+                    application_gestures.by_title.push((regex, gestures));
+                } else {
+                    // Treat as class
+                    let regex = Regex::new(&app_name)?;
+                    application_gestures.by_class.push((regex, gestures));
                 }
             }
         }
 
         Ok(Config {
-            options: config_raw.options,
+            options: options.clone(),
             gestures,
             application_gestures,
         })
     }
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ImportedConfigRaw {
-    pub gestures: Option<Vec<GestureRaw>>,
-    pub application_gestures: Option<ApplicationGesturesRaw>,
 }
 
 fn are_gestures_conflicting(g1: &Gesture, g2: &Gesture) -> bool {
@@ -250,7 +255,9 @@ impl Config {
     pub fn parse_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(&path)?;
         let main_config_raw: ConfigRaw = serde_yaml::from_str(&content)?;
-        let main_config = Config::from_raw(path, main_config_raw)?;
+
+        let options = main_config_raw.options.clone().unwrap_or_default();
+        let main_config = Config::from_raw(path, main_config_raw, &options)?;
 
         let all_gestures = main_config.gestures
             .iter()
