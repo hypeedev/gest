@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use std::path::Path;
 use regex::Regex;
 use bitflags::bitflags;
@@ -126,7 +126,7 @@ pub struct ApplicationGestures {
 #[derive(Debug, serde::Deserialize)]
 pub struct ConfigRaw {
     #[serde(default)]
-    pub import: Vec<String>,
+    pub import: Vec<PathBuf>,
     #[serde(default)]
     pub options: Option<Options>,
     #[serde(default)]
@@ -137,6 +137,7 @@ pub struct ConfigRaw {
 
 #[derive(Debug)]
 pub struct Config {
+    pub import: Vec<PathBuf>,
     pub options: Options,
     pub gestures: Vec<Gesture>,
     pub application_gestures: ApplicationGestures,
@@ -157,19 +158,20 @@ impl Config {
 
         let mut application_gestures = ApplicationGestures::default();
 
+        let parent_path = path.as_ref().parent().unwrap_or_else(|| Path::new("."));
         if !config_raw.import.is_empty() {
-            let parent_path = path.as_ref().parent().unwrap_or_else(|| Path::new("."));
+            // let parent_path = path.as_ref().parent().unwrap_or_else(|| Path::new("."));
             for import_path in &config_raw.import {
                 let path = parent_path.join(import_path);
                 if !std::fs::exists(&path).unwrap() {
-                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("Imported config file not found: {}", import_path))));
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, format!("Imported config file not found: {:?}", import_path))));
                 }
 
                 let imported_config_raw: ConfigRaw = serde_yaml::from_str(&std::fs::read_to_string(&path)?)?;
 
                 // TODO: merge options?
                 if imported_config_raw.options.is_some() {
-                    log::warn!("Warning: Imported config file '{}' contains options which will be ignored.", import_path);
+                    log::warn!("Warning: Imported config file '{:?}' contains options which will be ignored.", import_path);
                 }
 
                 let imported_config = Config::from_raw(&path, imported_config_raw, options)?;
@@ -224,6 +226,7 @@ impl Config {
         }
 
         Ok(Config {
+            import: config_raw.import.iter().map(|import_path| parent_path.join(import_path)).collect(),
             options: options.clone(),
             gestures,
             application_gestures,

@@ -1,3 +1,6 @@
+// TODO: Create a lock file to prevent multiple instances running simultaneously
+// TODO: Fix 4 up -> 4 left gesture switching to left tab
+
 mod gestures;
 mod input;
 mod config;
@@ -6,9 +9,11 @@ mod args;
 mod sequence_step;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use arc_swap::ArcSwap;
 use evdev::{AbsoluteAxisCode, EventType};
 use clap::Parser;
+use notify::Watcher;
 use std::path::Path;
 use crate::config::Config;
 use crate::gestures::{GesturesEngine, Position, State};
@@ -54,16 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     init_logger(&args);
 
-    let active_window = Arc::new(Mutex::new(Window::default()));
+    let active_window = Arc::new(ArcSwap::new(Window::default().into()));
 
     std::thread::spawn({
-        let active_window = Arc::clone(&active_window);
+        let active_window = active_window.clone();
         move || {
-            let mut wlroots = window_monitor::WlrootsMonitor::new(Box::new(move |class_name: String, title: String| {
-                let mut active_window_guard = active_window.lock().unwrap();
-                active_window_guard.class = class_name;
-                active_window_guard.title = title;
-                log::debug!("Active window changed: {:?}", *active_window_guard);
+            let mut wlroots = window_monitor::WlrootsMonitor::new(Box::new(move |class: String, title: String| {
+                let new_window = Window { class, title };
+                log::debug!("Active window changed: {:?}", new_window);
+                active_window.swap(new_window.into());
             }));
             wlroots.run();
         }
@@ -83,15 +87,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::debug!("Using config file: {:?}", config_path);
 
-    let config = match Config::parse_from_file(config_path) {
-        Ok(cfg) => cfg,
+    let config = Arc::new(ArcSwap::new(match Config::parse_from_file(&config_path) {
+        Ok(cfg) => cfg.into(),
         Err(e) => {
             log::error!("Failed to parse config file: {}", e);
             std::process::exit(1);
         }
-    };
+    }));
 
     log::debug!("Loaded config: {:#?}", config);
+
+    // Watch config file for changes
+    std::thread::spawn({
+        let config = config.clone();
+        move || {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut watcher = notify::recommended_watcher(tx).unwrap();
+            let parent = config_path.parent().unwrap();
+            watcher.watch(Path::new(parent), notify::RecursiveMode::Recursive).unwrap();
+            for res in rx {
+                match res {
+                    Ok(event) => {
+                        if let notify::EventKind::Modify(notify::event::ModifyKind::Data(_)) = event.kind {
+                            let config_guard = config.load();
+                            if event.paths.iter().any(|path| *path == config_path || config_guard.import.contains(path)) {
+                                log::info!("Config file changed, reloading...");
+                                match Config::parse_from_file(&config_path) {
+                                    Ok(new_config) => {
+                                        config.swap(new_config.into());
+                                        log::info!("Config reloaded successfully.");
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to reload config file: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Watch error: {:?}", e);
+                    }
+                }
+            }
+        }
+    });
 
     let touchpad_device = match get_touchpad_device() {
         Some(device) => device,
@@ -107,7 +146,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.options.move_threshold);
+
+    let move_threshold_units = calculate_move_threshold_units(&touchpad_size, config.load().options.move_threshold);
 
     let mut gestures_manager = GesturesEngine::new(config, active_window, move_threshold_units, touchpad_size);
 

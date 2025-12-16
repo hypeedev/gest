@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use arc_swap::ArcSwap;
+
 use crate::config::{Config, Direction, Edge, Gesture, RepeatMode};
 use crate::Window;
 use crate::sequence_step::{DefinedSequenceStep, PerformedSequenceStep};
@@ -54,7 +56,7 @@ pub struct MoveThresholdUnits {
 
 #[derive(Debug)]
 pub struct GesturesEngine {
-    pub config: Config,
+    pub config: Arc<ArcSwap<Config>>,
     /// positions of fingers in the previous update
     previous_state: State,
     /// initial positions when fingers touch down
@@ -65,7 +67,7 @@ pub struct GesturesEngine {
     repeat_mode: RepeatMode,
     move_threshold_units: MoveThresholdUnits,
     touchpad_size: MoveThresholdUnits,
-    active_window: Arc<Mutex<Window>>,
+    active_window: Arc<ArcSwap<Window>>,
     previous_direction: Direction,
     starting_edge: Option<Edge>,
     gesture_in_progress: bool,
@@ -73,7 +75,7 @@ pub struct GesturesEngine {
 }
 
 impl GesturesEngine {
-    pub fn new(config: Config, active_window: Arc<Mutex<Window>>, move_threshold_units: MoveThresholdUnits, touchpad_size: MoveThresholdUnits) -> Self {
+    pub fn new(config: Arc<ArcSwap<Config>>, active_window: Arc<ArcSwap<Window>>, move_threshold_units: MoveThresholdUnits, touchpad_size: MoveThresholdUnits) -> Self {
         Self {
             config,
             previous_state: State::default(),
@@ -91,9 +93,9 @@ impl GesturesEngine {
         }
     }
 
-    fn at_edge(&self, pos: &Position) -> Option<Edge> {
-        let edge_threshold_x = (self.touchpad_size.x as f32 * self.config.options.edge.threshold) as u16;
-        let edge_threshold_y = (self.touchpad_size.y as f32 * self.config.options.edge.threshold) as u16;
+    fn at_edge(&self, pos: &Position, config: &Config) -> Option<Edge> {
+        let edge_threshold_x = (self.touchpad_size.x as f32 * config.options.edge.threshold) as u16;
+        let edge_threshold_y = (self.touchpad_size.y as f32 * config.options.edge.threshold) as u16;
         if pos.x <= edge_threshold_x {
             Some(Edge::Left)
         } else if pos.x >= self.touchpad_size.x - edge_threshold_x {
@@ -125,6 +127,8 @@ impl GesturesEngine {
     }
 
     pub fn update_state(&mut self, state: State) {
+        let config = self.config.load();
+
         if state.positions.is_empty() {
             self.handle_lift_and_cleanup();
             return;
@@ -137,7 +141,7 @@ impl GesturesEngine {
 
         // Determine starting edge if not already set
         if self.performed_sequence.is_empty() {
-            let mut edges = self.touch_down_state.positions.values().map(|pos| self.at_edge(pos));
+            let mut edges = self.touch_down_state.positions.values().map(|pos| self.at_edge(pos, &config));
             if let Some(first_edge) = edges.next() && edges.all(|edge| edge == first_edge) {
                 self.starting_edge = first_edge;
             }
@@ -164,7 +168,7 @@ impl GesturesEngine {
         if let Some(centroid) = state.centroid() {
             let touch_down_centroid = self.touch_down_state.centroid().unwrap();
 
-            let edge = self.at_edge(&touch_down_centroid);
+            let edge = self.at_edge(&touch_down_centroid, &config);
 
             let direction = self.point_side_in_ellipse(&centroid, &touch_down_centroid);
             if direction != self.previous_direction {
@@ -182,7 +186,7 @@ impl GesturesEngine {
             }
             self.previous_direction = direction;
 
-            if self.point_outside_of_ellipse(&centroid, &touch_down_centroid, edge.is_some()) {
+            if self.point_outside_of_ellipse(&centroid, &touch_down_centroid, edge.is_some(), &config) {
                 for slot in state.positions.keys() {
                     self.state_directions.insert(*slot, direction);
                 }
@@ -254,8 +258,8 @@ impl GesturesEngine {
         self.previous_state = state;
     }
 
-    pub fn point_outside_of_ellipse(&self, point: &Position, center: &Position, is_edge: bool) -> bool {
-        let sensitivity = if is_edge { 1.0 - self.config.options.edge.sensitivity } else { 1.0 };
+    pub fn point_outside_of_ellipse(&self, point: &Position, center: &Position, is_edge: bool, config: &Config) -> bool {
+        let sensitivity = if is_edge { 1.0 - config.options.edge.sensitivity } else { 1.0 };
         let nx = (point.x as f64 - center.x as f64) / (self.move_threshold_units.x as f64 * sensitivity as f64);
         let ny = (point.y as f64 - center.y as f64) / (self.move_threshold_units.y as f64 * sensitivity as f64);
         let v = nx * nx + ny * ny;
@@ -283,6 +287,8 @@ impl GesturesEngine {
     }
 
     fn match_gestures(&mut self, repeat_mode: RepeatMode) -> bool {
+        let config = self.config.load();
+
         // Temporarily remove all trailing touch up and down steps for matching
         let trailing_count = self.performed_sequence.iter()
             .rev()
@@ -298,17 +304,17 @@ impl GesturesEngine {
             }
         }
 
-        let active_window = &self.active_window.lock().unwrap();
+        let active_window = self.active_window.load();
 
         let mut app_gestures_by_class = Vec::new();
-        for (regex, gestures) in &self.config.application_gestures.by_class {
+        for (regex, gestures) in &config.application_gestures.by_class {
             if regex.is_match(&active_window.class) {
                 app_gestures_by_class.extend(gestures);
             }
         }
 
         let mut app_gestures_by_title = Vec::new();
-        for (regex, gestures) in &self.config.application_gestures.by_title {
+        for (regex, gestures) in &config.application_gestures.by_title {
             if regex.is_match(&active_window.title) {
                 app_gestures_by_title.extend(gestures);
             }
@@ -317,7 +323,7 @@ impl GesturesEngine {
         let app_gestures = app_gestures_by_class
             .into_iter()
             .chain(app_gestures_by_title);
-        let matching_gestures = self.config.gestures
+        let matching_gestures = config.gestures
             .iter()
             .chain(app_gestures)
             .filter(|g| self.does_gesture_match(g, &repeat_mode))
@@ -325,7 +331,7 @@ impl GesturesEngine {
             .collect::<Vec<_>>();
 
         if !matching_gestures.is_empty() {
-            if self.config.options.run_all_matches {
+            if config.options.run_all_matches {
                 let names = matching_gestures.iter().map(|g| &g.name).collect::<Vec<_>>();
                 log::debug!("Matched gestures: {:?}", names);
 
