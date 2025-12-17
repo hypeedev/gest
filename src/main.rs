@@ -1,24 +1,24 @@
-// TODO: Create a lock file to prevent multiple instances running simultaneously
-// TODO: Fix 4 up -> 4 left gesture switching to left tab
-
 mod gestures;
 mod input;
 mod config;
 mod window_monitor;
 mod args;
 mod sequence_step;
+mod lockfile;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use arc_swap::ArcSwap;
 use evdev::{AbsoluteAxisCode, EventType};
 use clap::Parser;
-use notify::Watcher;
+use notify::event::ModifyKind;
+use notify::{EventKind, Watcher};
 use std::path::Path;
 use crate::config::Config;
 use crate::gestures::{GesturesEngine, Position, State};
 use crate::input::{calculate_move_threshold_units, get_touchpad_device, get_touchpad_size};
 use crate::args::Args;
+use crate::lockfile::Lock;
 
 #[derive(Debug, Default)]
 pub struct Window {
@@ -58,6 +58,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     init_logger(&args);
+
+    const LOCK_FILE_PATH: &str = "/tmp/gest.lock";
+    let _lockfile = match Lock::acquire(LOCK_FILE_PATH) {
+        Ok(file) => file,
+        Err(_) => {
+            log::error!("Another instance of the application is already running.");
+            std::process::exit(1);
+        }
+    };
 
     let active_window = Arc::new(ArcSwap::new(Window::default().into()));
 
@@ -108,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for res in rx {
                 match res {
                     Ok(event) => {
-                        if let notify::EventKind::Modify(notify::event::ModifyKind::Data(_)) = event.kind {
+                        if let EventKind::Modify(ModifyKind::Data(_)) = event.kind {
                             let config_guard = config.load();
                             if event.paths.iter().any(|path| *path == config_path || config_guard.import.contains(path)) {
                                 log::info!("Config file changed, reloading...");
